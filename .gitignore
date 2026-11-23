@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Your personal Ashie data (normally lives in ~/Ashie, never inside the repo)
+Ashie/
+config.json
+groq_key.txt
+voice_profile.npy
+memory.json
+history.json
+episodes*.json
+episodes_vec.npy
+reminders.json
+notes.json
+tasks.json
+activity.json
+status.json
+*.onnx
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

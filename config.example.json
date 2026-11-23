@@ -1,0 +1,23 @@
+{
+  "user_name": "Alex",
+  "user_profile": "Lives in Berlin and works as a product designer.",
+  "assistant_name": "Ashie",
+  "wake_variants": ["ashie", "ashi", "ashy", "ashe", "asha", "ashee", "archie"],
+  "hotkey": "f8",
+  "voice": "en-US-AvaNeural",
+  "voice_rate": "+0%",
+  "voice_pitch": "+0Hz",
+  "voice_lock_enabled": true,
+  "voice_match_threshold": 0.72,
+  "whisper_model": "base.en",
+  "mic_index": null,
+  "default_city": "Berlin",
+  "email_method": "gmail",
+  "chrome_profile": "Default",
+  "dashboard_enabled": true,
+  "dashboard_port": 8765,
+  "dashboard_open_browser": false,
+  "contacts": {
+    "sam": { "phone": "+491701234567", "email": "sam@example.com" }
+  }
+}

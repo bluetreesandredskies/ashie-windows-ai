@@ -1,0 +1,45 @@
+# Ashie - Python dependencies
+# Install with:  pip install -r requirements.txt
+# After that, ALWAYS run once:  pip install -U edge-tts
+# (Microsoft changes its voice-server auth every few months; old edge-tts
+#  versions get "403 Invalid response status" and Ashie falls back to the
+#  robotic voice. Updating fixes it.)
+
+# Ears (offline speech-to-text)
+faster-whisper
+SpeechRecognition
+PyAudio
+
+# Voice lock (offline speaker verification - "only respond to my voice")
+webrtcvad-wheels   # prebuilt wheel so resemblyzer installs without a C++ compiler
+resemblyzer
+
+# Voice output
+edge-tts>=7.0.0    # free online neural voice (no key)
+gTTS               # 2nd online voice (Google), used if edge-tts is blocked
+pygame             # plays the generated audio
+pyttsx3            # last-resort offline voice (built into Windows)
+
+# Eyes (offline OCR to read the screen) + window automation
+rapidocr-onnxruntime
+pywinauto
+pywin32
+
+# Hands (mouse/keyboard control, clipboard, processes)
+pyautogui
+pyperclip
+psutil
+keyboard
+
+# Device powers (volume / brightness)
+pycaw
+comtypes
+screen-brightness-control
+
+# Brain's web search skill
+ddgs
+
+numpy
+
+# Long-term semantic memory (optional). If it is not installed, Ashie uses a built-in lightweight recall.
+fastembed
