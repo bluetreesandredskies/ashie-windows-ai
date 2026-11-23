@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ashie dashboard</title>
+<style>
+:root{--bg:#eef0f1;--panel:#fff;--ink:#1b2024;--mute:#68737c;--line:#dde2e5;--acc:#0f9b8c;--acc2:#6a5be2;--warn:#d9822b;--bad:#cf4a4a;--chip:#e7f4f2;--r:14px}
+@media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#121518;--panel:#1b1f23;--ink:#e9e7e2;--mute:#8d98a1;--line:#2b3238;--acc:#4fd1bf;--acc2:#9b8cff;--warn:#f0a259;--bad:#f07272;--chip:#21302f}}
+:root[data-theme=dark]{--bg:#121518;--panel:#1b1f23;--ink:#e9e7e2;--mute:#8d98a1;--line:#2b3238;--acc:#4fd1bf;--acc2:#9b8cff;--warn:#f0a259;--bad:#f07272;--chip:#21302f}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:transparent;border-radius:9px;padding:5px 10px}
+button:hover{border-color:var(--acc)}button.pri{background:var(--acc);border-color:var(--acc);color:#07201d;font-weight:600}
+input,select{background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px 10px;min-width:0}
+:focus-visible{outline:2px solid var(--acc2);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 48px}
+header{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.orb{width:64px;height:64px;border-radius:50%;flex:none;background:conic-gradient(from 0deg,var(--acc),var(--acc2),var(--acc));display:grid;place-items:center;position:relative}
+.orb::after{content:"";position:absolute;inset:9px;border-radius:50%;background:var(--bg)}
+.orb i{position:absolute;z-index:1;display:flex;gap:3px;align-items:center;height:26px}
+.orb b{width:4px;height:6px;border-radius:2px;background:var(--acc)}
+body[data-state=listening] .orb{animation:pulse 2.6s ease-in-out infinite}
+body[data-state=thinking] .orb{animation:spin 1.1s linear infinite}
+body[data-state=speaking] .orb b{animation:wave .7s ease-in-out infinite}
+body[data-state=speaking] .orb b:nth-child(2){animation-delay:.1s}body[data-state=speaking] .orb b:nth-child(3){animation-delay:.2s}body[data-state=speaking] .orb b:nth-child(4){animation-delay:.3s}
+body[data-state=offline] .orb{filter:grayscale(1) opacity(.5)}
+@keyframes pulse{50%{transform:scale(1.07);box-shadow:0 0 0 10px color-mix(in srgb,var(--acc) 18%,transparent)}}
+@keyframes spin{to{transform:rotate(360deg)}}@keyframes wave{50%{height:22px}}
+@media(prefers-reduced-motion:reduce){.orb,.orb b{animation:none!important}}
+h1{font-size:24px;margin:0;letter-spacing:-.01em}.sub{color:var(--mute);font-size:13px}
+.cmd{flex:1;min-width:260px;display:flex;gap:8px}.cmd input{flex:1;padding:11px 14px;border-radius:12px}
+.tools{display:flex;gap:6px}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
+.c7{grid-column:span 7}.c5{grid-column:span 5}.c4{grid-column:span 4}.c6{grid-column:span 6}.c8{grid-column:span 8}.c12{grid-column:span 12}
+@media(max-width:900px){.c7,.c5,.c4,.c6,.c8{grid-column:span 12}}
+h2{font-size:15px;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+h2 small{color:var(--mute);font-weight:400}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+@media(max-width:600px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+.stat b{display:block;font-size:22px;letter-spacing:-.02em}.stat span{color:var(--mute);font-size:12.5px}
+.row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}.row .t{flex:1;min-width:0;overflow-wrap:anywhere}
+.row .when{font:12.5px ui-monospace,Consolas,monospace;color:var(--acc);white-space:nowrap}
+.row.late .when{color:var(--warn)}.row.done .t{text-decoration:line-through;color:var(--mute)}
+.mini{font-size:12px;padding:2px 7px;color:var(--mute)}.mini:hover{color:var(--ink)}
+.form{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.form input{flex:1;min-width:120px}
+.hint{font-size:12.5px;color:var(--mute);min-height:18px;margin-top:6px}.hint.ok{color:var(--acc)}.hint.err{color:var(--bad)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--chip);border-radius:99px;padding:4px 6px 4px 11px;font-size:13px;display:flex;gap:6px;align-items:center}
+.chip button{border:0;padding:0 5px;color:var(--mute);border-radius:99px}
+.note{border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px;display:flex;gap:8px;align-items:flex-start}
+.note.pin{border-color:var(--acc2)}
+.bar{display:grid;grid-template-columns:90px 1fr 28px;gap:8px;align-items:center;font-size:13px;margin:6px 0}
+.bar div{height:8px;border-radius:5px;background:var(--line);overflow:hidden}.bar div i{display:block;height:100%;background:var(--acc)}
+.hours{display:flex;gap:3px;align-items:flex-end;height:64px;margin-top:6px}
+.hours i{flex:1;background:var(--acc2);border-radius:3px 3px 0 0;min-height:2px;opacity:.85}
+.ax{display:flex;justify-content:space-between;color:var(--mute);font-size:11px;margin-top:3px}
+.feed{max-height:300px;overflow:auto}.feed .row{font-size:13.5px}.k{font-size:11.5px;color:var(--mute);width:62px;flex:none}
+.empty{color:var(--mute);font-size:13.5px;padding:6px 0}
+.say{font-size:13.5px;margin:0 0 8px}.say em{color:var(--mute);font-style:normal}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:10px;font-size:13.5px;opacity:0;pointer-events:none;transition:opacity .2s}.toast.on{opacity:1}
+</style>
+</head>
+<body data-state="offline">
+<div class="wrap">
+<header>
+  <div class="orb" aria-hidden="true"><i><b></b><b></b><b></b><b></b></i></div>
+  <div><h1 id="hi">Hello</h1><div class="sub" id="sub">Connecting…</div></div>
+  <form class="cmd" id="cmdf"><input id="cmd" placeholder="Type a command for Ashie (press / to focus)" aria-label="Command for Ashie" autocomplete="off"><button class="pri">Send</button></form>
+  <div class="tools"><button id="theme" title="Switch light or dark">Theme</button></div>
+</header>
+
+<div class="stats" id="stats"></div>
+
+<div class="grid">
+  <section class="card c7"><h2>Reminders <small id="rcount"></small></h2><div id="rem"></div>
+    <form class="form" id="remf"><input id="rt" placeholder="What should I remind you about?" aria-label="Reminder text"><input id="rw" placeholder="When? e.g. in 20 minutes, tomorrow at 9" aria-label="When"><select id="rr" aria-label="Repeat"><option value="">Once</option><option value="daily">Daily</option><option value="weekdays">Weekdays</option><option value="weekly">Weekly</option></select><button class="pri">Add</button></form>
+    <div class="hint" id="rh">Tip: you can also say “Ashie, remind me to call mom at 6 pm”.</div></section>
+  <section class="card c5"><h2>To-do <small id="tcount"></small></h2><div id="tasks"></div>
+    <form class="form" id="taskf"><input id="tt" placeholder="Add a task" aria-label="New task"><button>Add</button></form></section>
+
+  <section class="card c6"><h2>Notes</h2><div id="notes"></div>
+    <form class="form" id="notef"><input id="nt" placeholder="Jot something down" aria-label="New note"><button>Save</button></form></section>
+  <section class="card c6"><h2>What I know about you <small id="fcount"></small></h2><div class="chips" id="facts"></div>
+    <form class="form" id="factf"><input id="ft" placeholder="Teach me something lasting" aria-label="New fact"><button>Remember</button></form>
+    <p class="sub" id="sum" style="margin-top:12px"></p><p class="sub" id="prof"></p></section>
+
+  <section class="card c5"><h2>Your habits</h2><div id="skills"></div><div class="sub" style="margin-top:12px">When you talk to me</div><div class="hours" id="hours"></div><div class="ax"><span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>11pm</span></div></section>
+  <section class="card c7"><h2>Activity <small>live</small></h2><div class="feed" id="feed"></div>
+    <h2 style="margin-top:16px">Last conversation</h2><div id="hist"></div></section>
+</div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let S=null, skew=0;
+async function api(name,body){
+  try{const r=await fetch("/api/"+name,{method:"POST",headers:{"Content-Type":"application/json","X-Ashie":"1"},body:JSON.stringify(body||{})});
+    const j=await r.json(); if(j.error) toast(j.error); return j;}catch(e){toast("Can’t reach the dashboard server.");return {}}
+}
+function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove("on"),2600)}
+const now=()=>Date.now()+skew;
+function countdown(iso){
+  const s=Math.round((new Date(iso).getTime()-now())/1000);
+  if(s<=0)return s>-60?"now":"overdue";
+  const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60),x=s%60;
+  return d?`${d}d ${h}h`:h?`${h}h ${String(m).padStart(2,"0")}m`:`${m}m ${String(x).padStart(2,"0")}s`;
+}
+function clock(iso){const d=new Date(iso),t=new Date();const same=d.toDateString()===t.toDateString();
+  return (same?"":d.toLocaleDateString([],{weekday:"short",day:"numeric",month:"short"})+" ")+d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}
+function upt(st){if(!st.started)return"";const m=Math.floor((Date.now()/1000-st.started)/60);return m<60?m+" min":Math.floor(m/60)+" h "+m%60+" min"}
+
+function render(){
+  if(!S)return;
+  const st=S.status||{}, A=S.assistant, mem=S.memory||{};
+  const state=st.online?(st.state||"listening"):"offline";
+  document.body.dataset.state=state;
+  const h=new Date().getHours();
+  $("hi").textContent=(h<12?"Good morning":h<17?"Good afternoon":"Good evening")+", "+S.user;
+  $("sub").textContent=st.online?`${A} is ${state==="thinking"?"thinking":state==="speaking"?"speaking":"listening"} · ${st.brain||"brain"} · up ${upt(st)}${S.demo?" · demo data":""}`
+    :`${A} isn’t running right now. You can still edit reminders, notes and tasks here.`;
+  const open=S.reminders.filter(r=>!r.done), tasksOpen=S.tasks.filter(t=>!t.done).length;
+  $("stats").innerHTML=[[open.length,"active reminders"],[tasksOpen,"tasks to do"],[(mem.facts||[]).length,"things I remember"],[(mem.stats||{}).n||0,"conversations learned from"]]
+    .map(([n,l])=>`<div class="stat"><b>${n}</b><span>${l}</span></div>`).join("");
+  $("rcount").textContent=open.length?open.length+" active":"";
+  $("rem").innerHTML=S.reminders.length?S.reminders.map(r=>{const late=!r.done&&new Date(r.due)<now();
+    return `<div class="row ${r.done?"done":""} ${late?"late":""}" data-id="${r.id}"><div class="t">${esc(r.text)}<div class="sub">${clock(r.due)}${r.repeat&&r.repeat!=="none"?" · repeats "+r.repeat:""}</div></div>
+    <span class="when" data-due="${r.due}" data-done="${r.done?1:0}">${r.done?"done":countdown(r.due)}</span>
+    ${r.done?`<button class="mini" data-a="reopen">Undo</button>`:`<button class="mini" data-a="snooze" title="Snooze 10 minutes">+10m</button><button class="mini" data-a="done">Done</button>`}<button class="mini" data-a="rdel" aria-label="Delete">✕</button></div>`}).join(""):`<div class="empty">Nothing scheduled. Add one below or just ask me out loud.</div>`;
+  $("tcount").textContent=tasksOpen?tasksOpen+" left":"";
+  $("tasks").innerHTML=S.tasks.length?S.tasks.map(t=>`<div class="row ${t.done?"done":""}" data-id="${t.id}"><input type="checkbox" ${t.done?"checked":""} data-a="ttoggle" aria-label="Done"><div class="t">${esc(t.text)}</div><button class="mini" data-a="tdel" aria-label="Delete">✕</button></div>`).join(""):`<div class="empty">All clear. Say “add task …” to me.</div>`;
+  $("notes").innerHTML=S.notes.length?S.notes.map(n=>`<div class="note ${n.pinned?"pin":""}" data-id="${n.id}"><div class="t" style="flex:1;overflow-wrap:anywhere">${esc(n.text)}<div class="sub">${clock(n.created)}${n.pinned?" · pinned":""}</div></div><button class="mini" data-a="npin">${n.pinned?"Unpin":"Pin"}</button><button class="mini" data-a="ndel" aria-label="Delete">✕</button></div>`).join(""):`<div class="empty">No notes yet. Say “take a note …”.</div>`;
+  $("fcount").textContent=(mem.facts||[]).length||"";
+  $("facts").innerHTML=(mem.facts||[]).length?mem.facts.slice().reverse().map(f=>`<span class="chip">${esc(f)}<button data-a="fdel" data-t="${esc(f)}" aria-label="Forget this">✕</button></span>`).join(""):`<div class="empty">Nothing yet. Say “remember that …”.</div>`;
+  $("sum").textContent=mem.summary?"Earlier chats: "+mem.summary:"";
+  $("prof").textContent=mem.profile?"How you talk: "+mem.profile:"";
+  const sk=Object.entries((mem.stats||{}).skills||{}).sort((a,b)=>b[1]-a[1]).slice(0,6),mx=sk.length?sk[0][1]:1;
+  $("skills").innerHTML=sk.length?sk.map(([k,v])=>`<div class="bar"><span>${esc(k)}</span><div><i style="width:${v/mx*100}%"></i></div><span>${v}</span></div>`).join(""):`<div class="empty">Habits appear after a few conversations.</div>`;
+  const hr=(mem.stats||{}).hours||{},hm=Math.max(1,...Object.values(hr));
+  $("hours").innerHTML=Array.from({length:24},(_,i)=>`<i title="${i}:00 · ${hr[i]||0}" style="height:${Math.max(3,(hr[i]||0)/hm*100)}%"></i>`).join("");
+  $("feed").innerHTML=S.activity.length?S.activity.map(a=>`<div class="row"><span class="k">${new Date(a.t).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</span><span class="k" style="color:var(--acc)">${esc(a.kind)}</span><div class="t">${esc(a.text)}</div></div>`).join(""):`<div class="empty">Quiet so far.</div>`;
+  $("hist").innerHTML=(mem.history||[]).slice(-3).map(e=>`<p class="say"><em>You</em> ${esc(e.user)}<br><em>${esc(A)}</em> ${esc(e.assistant)}</p>`).join("")||`<div class="empty">No conversation yet.</div>`;
+}
+function tickCountdowns(){document.querySelectorAll(".when[data-due]").forEach(e=>{if(e.dataset.done!=="1")e.textContent=countdown(e.dataset.due)})}
+async function load(){
+  if(document.activeElement&&document.activeElement.tagName==="SELECT")return;
+  try{const r=await fetch("/api/state",{cache:"no-store"});S=await r.json();skew=new Date(S.now).getTime()-Date.now();render()}catch(e){document.body.dataset.state="offline";$("sub").textContent="Dashboard server not reachable."}
+}
+document.addEventListener("click",async e=>{
+  const b=e.target.closest("[data-a]");if(!b)return;const row=b.closest("[data-id]"),id=row&&row.dataset.id,a=b.dataset.a;
+  const map={done:["reminder.done",{id}],reopen:["reminder.reopen",{id}],snooze:["reminder.snooze",{id,minutes:10}],rdel:["reminder.delete",{id}],
+    ndel:["note.delete",{id}],npin:["note.pin",{id,pinned:!(S.notes.find(n=>n.id===id)||{}).pinned}],tdel:["task.delete",{id}],fdel:["fact.delete",{text:b.dataset.t}]};
+  if(map[a]){await api(...map[a]);if(a==="snooze")toast("Snoozed for 10 minutes");load()}
+});
+document.addEventListener("change",async e=>{if(e.target.dataset.a==="ttoggle"){await api("task.toggle",{id:e.target.closest("[data-id]").dataset.id,done:e.target.checked});load()}});
+function bind(form,input,fn){$(form).addEventListener("submit",async e=>{e.preventDefault();const v=$(input).value.trim();if(!v)return;if(await fn(v)!==false)$(input).value="";load()})}
+bind("taskf","tt",async v=>{await api("task.add",{text:v})});
+bind("notef","nt",async v=>{await api("note.add",{text:v});toast("Note saved")});
+bind("factf","ft",async v=>{await api("fact.add",{text:v});toast("I’ll remember that")});
+bind("cmdf","cmd",async v=>{const r=await api("command",{text:v});if(r.ok)toast("Sent to "+S.assistant+" — she’ll pick it up in a moment");else return false});
+$("remf").addEventListener("submit",async e=>{e.preventDefault();
+  const r=await api("reminder.add",{text:$("rt").value,when:$("rw").value,repeat:$("rr").value});
+  if(r.ok){$("rt").value=$("rw").value="";$("rr").value="";$("rh").className="hint ok";$("rh").textContent="Added. I’ll speak up when it’s time.";load()}});
+let ph;$("rw").addEventListener("input",()=>{clearTimeout(ph);ph=setTimeout(async()=>{const v=$("rw").value.trim(),h=$("rh");if(!v){h.className="hint";return}
+  const r=await api("parse",{text:v});h.className="hint "+(r.due?"ok":"err");h.textContent=r.due?"I’ll remind you "+r.human+(r.repeat!=="none"?" and repeat "+r.repeat:""):"I can’t read that time yet. Try “in 30 minutes” or “friday at 5 pm”."},250)});
+document.addEventListener("keydown",e=>{if((e.key==="/"&&!/INPUT|SELECT/.test(document.activeElement.tagName))||(e.key==="k"&&(e.ctrlKey||e.metaKey))){e.preventDefault();$("cmd").focus()}});
+(()=>{try{const t=localStorage.getItem("ashie-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}})();
+$("theme").onclick=()=>{const d=document.documentElement,dark=d.dataset.theme?d.dataset.theme==="dark":matchMedia("(prefers-color-scheme:dark)").matches;
+  d.dataset.theme=dark?"light":"dark";try{localStorage.setItem("ashie-theme",d.dataset.theme)}catch(e){}};
+load();setInterval(load,2000);setInterval(tickCountdowns,1000);
+</script>
+</body>
+</html>
