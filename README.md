@@ -6,7 +6,7 @@
 Say her name, and she opens apps, writes emails, reads your screen, sets reminders and remembers who you are.
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)
-![Python](https://img.shields.io/badge/python-3.10%2B-3776ab)
+![Python](https://img.shields.io/badge/python-3.10%E2%80%933.12-3776ab)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Cost](https://img.shields.io/badge/cost-free-brightgreen)
 ![Privacy](https://img.shields.io/badge/ears%20%26%20eyes-offline-purple)
@@ -30,28 +30,24 @@ Say her name, and she opens apps, writes emails, reads your screen, sets reminde
 
 ## 🚀 Quick start
 
-> **You need:** Windows 10/11, Python 3.10 or newer, a microphone, and (optional) internet for the cloud brain and online voice.
+> **You need:** Windows 10/11, **Python 3.10, 3.11 or 3.12** (3.11 recommended; 3.13 is not supported yet), a microphone, and (optional) internet for the cloud brain and online voice.
 
 ```powershell
 # 1. Get the code
-git clone https://github.com/<your-username>/ashie.git
-cd ashie
+git clone https://github.com/bluetreesandredskies/ashie-windows-ai.git
+cd ashie-windows-ai
 
-# 2. (Recommended) create a virtual environment
-python -m venv .venv
+# 2. Install everything (creates .venv, handles the tricky voice-lock install)
+powershell -ExecutionPolicy Bypass -File install.ps1
 .venv\Scripts\activate
 
-# 3. Install dependencies
-pip install -r requirements.txt
-pip install -U edge-tts        # always run this once, see Troubleshooting
-
-# 4. First-time setup: your name, city, etc.
+# 3. First-time setup: your name, city, etc.
 python ashie.py --setup
 
-# 5. (Optional but recommended) add the free cloud brain
+# 4. (Optional but recommended) add the free cloud brain
 python ashie.py --set-groq-key
 
-# 6. Run her
+# 5. Run her
 python ashie.py
 ```
 
@@ -307,6 +303,18 @@ Microsoft changes its voice-server authentication every few months. Update the l
 ```powershell
 pip install -U edge-tts
 python ashie.py --test-voice
+```
+</details>
+
+<details>
+<summary><b>Install fails with "Microsoft Visual C++ 14.0 or greater is required" (webrtcvad)</b></summary>
+
+You are probably on Python 3.13, or installed with plain `pip install -r`. Use Python 3.11 and run `install.ps1`, or by hand:
+
+```powershell
+pip install webrtcvad-wheels
+pip install resemblyzer --no-deps
+pip install -r requirements.txt
 ```
 </details>
 

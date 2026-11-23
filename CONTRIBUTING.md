@@ -10,9 +10,10 @@ Thanks for helping! Ashie is a hobby-scale, local-first assistant, so small focu
 
 ## Dev setup
 ```bash
-git clone https://github.com/<you>/ashie.git && cd ashie
-python -m venv .venv && .venv\Scripts\activate
-pip install -r requirements.txt && pip install -U edge-tts pytest
+git clone https://github.com/bluetreesandredskies/ashie-windows-ai.git && cd ashie-windows-ai
+powershell -ExecutionPolicy Bypass -File install.ps1
+.venv\Scripts\activate
+pip install pytest
 python dashboard.py --demo        # work on the UI with sample data
 python -m pytest tests            # run the tests
 ```

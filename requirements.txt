@@ -5,14 +5,21 @@
 #  versions get "403 Invalid response status" and Ashie falls back to the
 #  robotic voice. Updating fixes it.)
 
+# Python 3.10, 3.11 or 3.12 (3.11 recommended). Python 3.13 is not supported yet.
+
 # Ears (offline speech-to-text)
 faster-whisper
 SpeechRecognition
 PyAudio
 
 # Voice lock (offline speaker verification - "only respond to my voice")
-webrtcvad-wheels   # prebuilt wheel so resemblyzer installs without a C++ compiler
-resemblyzer
+# NOTE: resemblyzer depends on 'webrtcvad', which needs a C++ compiler to build on Windows.
+# So it is NOT listed here: install.ps1 (or the README steps) installs the prebuilt
+# 'webrtcvad-wheels' first and then resemblyzer with --no-deps. Use Python 3.10-3.12.
+webrtcvad-wheels   # prebuilt wheel, no compiler needed
+scipy
+librosa
+torch
 
 # Voice output
 edge-tts>=7.0.0    # free online neural voice (no key)
