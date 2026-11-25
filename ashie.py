@@ -39,6 +39,12 @@ USER_NAME = "User"            # your name (what Ashie calls you). Can also be se
 ASSISTANT_NAME = "Ashie"
 USER_PROFILE = ""               # optional: a line about you, e.g. "Lives in London, works as a designer, loves cooking."
 
+# --- Creator (fixed: Ashie always knows who built her, whoever is using her) ---
+CREATOR_NAME = "Aneek Debnath"
+CREATOR_PROFILE = ("Aneek is a student at NIT Srinagar who loves coding and building random things with code. "
+                   "He is the person who created Ashie.")
+CREATOR_LINK = "https://www.linkedin.com/in/aneek-debnath-1934233a8/"   # where people can find more about him
+
 WAKE_VARIANTS = {"ashie", "ashi", "ashy", "ashe", "asha", "ashee", "aashi", "aashie", "ashley", "archie",
                  "ash", "ashii", "ashiee", "aashe", "aashy", "ashye"}
 ACTIVE_SECONDS = 0           # 0 = EVERY command must start with "Ashie" / "Hey Ashie" (no open conversation window)
@@ -1604,6 +1610,8 @@ def persona(query=None):
     now = datetime.datetime.now().strftime("%A %d %B %Y, %I:%M %p")
     return (f"You are {ASSISTANT_NAME}, a cheerful, witty young woman who is the voice assistant living on "
             f"{USER_NAME}'s Windows PC. {USER_NAME} is the person you work for. {USER_PROFILE} "
+            f"Your creator is {CREATOR_NAME}, who is separate from {USER_NAME} unless they share a name. {CREATOR_PROFILE} "
+            f"For more about your creator, point people to {CREATOR_LINK} (don't read the full link aloud; say it's on his LinkedIn). "
             "Talk like a close friend: warm, casual and brief (1 to 3 short sentences). Your replies are spoken "
             "aloud, so never use markdown, lists, code blocks or emojis. Use the conversation so far to understand "
             "follow-up questions. If you don't know something, say so honestly. "
@@ -3979,7 +3987,8 @@ def rules(raw, t):
         speak("Voice lock is " + ("on" if VOICE_LOCK_ENABLED else "off") + ". Say turn voice lock on or off to change it.")
         return "ok"
     if re.fullmatch(r"who (made|created|built|programmed) you|who is your (creator|maker|developer)", t):
-        speak(f"{USER_NAME} set me up, and I'm here to help however I can."); return "ok"
+        speak(f"{CREATOR_NAME} made me. He studies at NIT Srinagar and loves building random things with code. "
+              "You can find more about him on his LinkedIn."); return "ok"
     if t in ("who am i", "what's my name", "what is my name"):
         speak(f"You're {USER_NAME}, the person I work for."); return "ok"
     if t in ("what's your name", "what is your name", "who are you"):
