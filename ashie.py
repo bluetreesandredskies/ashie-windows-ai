@@ -1,8 +1,8 @@
 """
-ASHIE - a free, local-first voice assistant for your Windows PC.
+ASHIE - a free, local-first voice assistant for Aneek's Windows PC.
 
 Ears  : faster-whisper (offline, runs on CPU so your GPU stays free)
-Lock  : resemblyzer voiceprint check (offline) - only your voice is obeyed
+Lock  : resemblyzer voiceprint check (offline) - only Aneek's voice is obeyed
 Voice : Microsoft neural voice via edge-tts (free, no key) -> Piper (offline neural,
         free) -> Google gTTS -> Windows SAPI voice, picking the best one available
 Brain : Groq cloud models when online (fast, smart) -> local Ollama model when offline
@@ -19,7 +19,9 @@ First run: Ashie records 3 short voice samples to learn your voice (or run
 for every download this script needs.
 """
 import os, sys, re, time, json, ast, shutil, difflib, asyncio, datetime, tempfile, threading
-import queue, subprocess, operator, traceback, urllib.request, urllib.parse, webbrowser
+import queue, subprocess, operator, traceback, urllib.request, urllib.parse, urllib.error, webbrowser
+import ctypes, html
+import xml.etree.ElementTree as ET
 from collections import deque
 from pathlib import Path
 
@@ -33,18 +35,19 @@ import psutil
 # =====================================================================
 #  CONFIG  (edit this section)
 # =====================================================================
-USER_NAME = "friend"             # your name - set it in ~/Ashie/config.json or run: python ashie.py --setup
+USER_NAME = "Aneek"
 ASSISTANT_NAME = "Ashie"
-USER_PROFILE = ""                 # optional one-liner about you, e.g. "Lives in Berlin, works as a designer."
+USER_PROFILE = "He lives in India and is a hardcore programmer who loves building things with code."
 
-WAKE_VARIANTS = {"ashie", "ashi", "ashy", "ashe", "asha", "ashee", "aashi", "aashie", "ashley", "archie"}
-ACTIVE_SECONDS = 45          # after she hears you, you can keep talking without the wake word
-HOTKEY = "f8"                # press F8 to talk to her without the wake word
+WAKE_VARIANTS = {"ashie", "ashi", "ashy", "ashe", "asha", "ashee", "aashi", "aashie", "ashley", "archie",
+                 "ash", "ashii", "ashiee", "aashe", "aashy", "ashye"}
+ACTIVE_SECONDS = 0           # 0 = EVERY command must start with "Ashie" / "Hey Ashie" (no open conversation window)
+HOTKEY = ""                  # "" = no push-to-talk key, wake word only. (Set e.g. "f8" in config.json to re-enable)
 MIC_INDEX = None             # None = default mic. Run `python ashie.py --mics` to list devices
 
-VOICE = "en-IN-NeerjaNeural" # young Indian female. Others: en-US-AvaNeural, en-US-EmmaNeural, en-GB-SoniaNeural
-VOICE_RATE = "+8%"
-VOICE_PITCH = "+6Hz"
+VOICE = "en-US-AvaNeural"    # young, natural US female. Others: en-US-EmmaNeural, en-US-JennyNeural, en-GB-SoniaNeural (British), en-GB-LibbyNeural (British, younger)
+VOICE_RATE = "+4%"
+VOICE_PITCH = "+0Hz"         # leave at 0 for the most natural sound; try "+2Hz" for a slightly brighter voice
 
 # Offline fallback voice (used only when there's no internet / edge-tts fails).
 # Piper sounds far more natural than the built-in Windows SAPI voice. Drop the
@@ -53,8 +56,15 @@ VOICE_PITCH = "+6Hz"
 PIPER_VOICE_NAME = "en_GB-jenny_dioco-medium"  # natural female offline voice
 
 # --- Voice lock: only respond to YOUR voice -------------------------------
-VOICE_LOCK_ENABLED = True     # False = anyone's voice can command Ashie
+VOICE_LOCK_ENABLED = False    # False = NO voice recognition: saying "Ashie" / "Hey Ashie" always triggers her,
+                              # whoever is talking. Toggle by voice: "turn off voice lock" / "turn on voice lock"
+                              # (saved to config.json), or start with:  python ashie.py --no-voice-lock
 VOICE_MATCH_THRESHOLD = 0.72  # 0-1, higher = stricter. Lower it a bit if she keeps ignoring you.
+
+# --- Wake-word speed --------------------------------------------------------
+WAKE_FAST = True              # idle listening uses a tiny model just to spot her name (~10x faster)
+WAKE_MODEL = "tiny.en"        # tiny.en = fastest, base.en = a bit more accurate at catching "Ashie"
+PAUSE_THRESHOLD = 0.65        # seconds of silence that end a phrase (was 0.9). Lower = snappier, but may cut slow talkers
 
 WHISPER_MODEL = "small.en"   # "base.en" = faster/lighter, "small.en" = better with accents
 WHISPER_THREADS = 4
@@ -63,9 +73,15 @@ WHISPER_THREADS = 4
 # The API key is NOT stored in this file. Run once:  python ashie.py --set-groq-key
 # (or set the GROQ_API_KEY environment variable). Each list is tried in order, so if
 # a model is retired or rate-limited Ashie moves to the next one automatically.
-GROQ_CHAT_MODELS = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "openai/gpt-oss-20b"]
-GROQ_FAST_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]   # command routing / agent JSON
-GROQ_CODE_MODELS = ["openai/gpt-oss-120b", "llama-3.3-70b-versatile"]
+# llama-3.3-70b-versatile and llama-3.1-8b-instant were shut down by Groq on 16 Aug 2026.
+# At startup Ashie also asks Groq which models are live and drops/replaces dead ones automatically.
+GROQ_CHAT_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+GROQ_FAST_MODELS = ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]   # command routing / agent JSON (20b = quicker)
+GROQ_CODE_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+# True = at startup (and every 6 h) Ashie asks Groq which models are live RIGHT NOW and picks the newest big
+# model for chat/code and the newest small/fast one for routing. The lists above are only the fallback.
+# Set "groq_auto_models": false in config.json to use the lists above exactly as written.
+GROQ_AUTO_MODELS = True
 
 # --- Memory ---------------------------------------------------------------
 HISTORY_TURNS = 20           # how many of your latest exchanges she keeps in context (saved to disk)
@@ -76,7 +92,7 @@ EPI_MIN_SCORE_FAST = 0.62    # how similar an old memory must be to get pulled b
 EPI_MIN_SCORE_HASH = 0.50    # built-in recall: share of your meaningful words an old memory must contain
 PROFILE_EVERY = 12           # re-learn how you talk after this many new exchanges
 
-LLM_MODEL = "qwen2.5:3b"            # offline brain, ~2 GB VRAM; any Ollama model works
+LLM_MODEL = "qwen2.5:3b"            # offline brain, ~2 GB VRAM, fits your RTX 3050 6 GB easily
 LOCAL_CTX = 4096                    # keep constant: changing it between calls makes Ollama reload the model
 CODE_MODEL = "qwen2.5-coder:3b"     # used only for coding tasks (set to None to disable)
 KEEP_ALIVE = "2m"                   # model leaves VRAM 2 minutes after last use
@@ -84,7 +100,7 @@ STOP_OLLAMA_WHEN_IDLE = True        # also close Ollama itself after idle time
 OLLAMA_IDLE_STOP_SECONDS = 300
 
 CHROME_PROFILE = "Default"   # chrome://version -> "Profile Path" last folder (Default / Profile 1 ...)
-DEFAULT_CITY = ""            # weather city, "" = auto-detect (e.g. "London")
+DEFAULT_CITY = ""            # weather city, "" = auto-detect (e.g. "Srinagar")
 EMAIL_METHOD = "gmail"       # "gmail" (Chrome, uses your logged-in Gmail) or "outlook" (desktop Outlook)
 
 # --- Dashboard (local web UI) ---------------------------------------------
@@ -106,11 +122,20 @@ os.environ["ASHIE_HOME"] = str(DATA)
 CONFIG_PATH = DATA / "config.json"
 
 
+_CONFIG_NOTE = ""
+
+
 def apply_config():
     """Anything in ~/Ashie/config.json overrides the defaults above (keys are case-insensitive)."""
+    global _CONFIG_NOTE
     try:
-        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    except Exception:
+        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
+        _CONFIG_NOTE = f"config loaded: {CONFIG_PATH}"
+    except FileNotFoundError:
+        _CONFIG_NOTE = f"no config file at {CONFIG_PATH} (using defaults in ashie.py)"
+        return
+    except Exception as e:
+        _CONFIG_NOTE = f"CONFIG ERROR in {CONFIG_PATH}: {e}  <- fix this file, it is being ignored"
         return
     for k, v in cfg.items():
         K = k.upper()
@@ -284,7 +309,7 @@ def _fold_summary():
             return
         convo = "\n".join(f"{USER_NAME}: {e['user']}\n{ASSISTANT_NAME}: {e.get('assistant', '')}" for e in batch)
         out = llm([{"role": "system", "content": "You maintain a compact memory of past conversations between "
-                                                 "a user and their voice assistant."},
+                                                 "a user and his voice assistant."},
                    {"role": "user", "content": f"Existing summary:\n{old or '(none)'}\n\nNew conversations:\n{convo}\n\n"
                                                "Write the updated summary in at most 120 words. Keep lasting details "
                                                "(people, projects, plans, preferences, unfinished to-dos). Drop small "
@@ -329,7 +354,7 @@ def _learn(text):
             return
         out = llm_json([{"role": "user", "content": (
             f"The speaker is {USER_NAME}. Message: \"{text}\"\n"
-            f"Extract only LASTING facts about {USER_NAME} (preferences, people in their life, projects, routines, "
+            f"Extract only LASTING facts about {USER_NAME} (preferences, people in his life, projects, routines, "
             "personal details) that would still be useful to remember months from now. Ignore commands, questions, "
             "small talk and temporary things. Reply as JSON: {\"facts\": [\"short third-person sentence\"]} "
             "with an empty list if there is nothing worth keeping.")}],
@@ -608,7 +633,7 @@ def _hour_label(h):
 
 
 def note_usage(user, skill):
-    """Cheap, offline pattern tracking: what they ask for, when, how long their messages are, how they phrase things."""
+    """Cheap, offline pattern tracking: what he asks for, when, how long his messages are, how he phrases things."""
     words = re.findall(r"[A-Za-z']+", user)
     with _mem_lock:
         st = MEM["stats"]
@@ -655,7 +680,7 @@ def style_block():
     big = groq_available()
     out = ""
     if MEM.get("profile"):
-        out += f"\nWhat {USER_NAME} is like and how they talk (learned over time): {MEM['profile']}"
+        out += f"\nWhat {USER_NAME} is like and how he talks (learned over time): {MEM['profile']}"
     habits = _stats_line()
     if habits:
         out += f"\nHabits: {habits}."
@@ -664,10 +689,10 @@ def style_block():
         import random
         n = 4 if big else 2
         pick = s[-2:] + random.sample(s[:-2], min(len(s[:-2]), max(0, n - 2)))
-        out += (f"\nExamples of how they phrase things (only to match their tone, never quote them): "
+        out += (f"\nExamples of how he phrases things (only to match his tone, never quote them): "
                 + " | ".join(p[:120] for p in pick))
     if out:
-        out += f"\nMatch their way of talking naturally (vocabulary, energy, humour) while staying yourself."
+        out += f"\nMatch his way of talking naturally (vocabulary, energy, humour) while staying yourself."
     return out
 
 
@@ -683,14 +708,14 @@ def _update_profile():
             recent = [e["user"] for e in list(HISTORY)[-14:]]
             old, samples = MEM.get("profile", ""), MEM["samples"][-8:]
         msgs = "\n".join("- " + m for m in recent + samples if m)
-        out = llm([{"role": "system", "content": "You study how a person talks and behaves so their voice assistant can "
-                                                 "feel like it truly knows them."},
+        out = llm([{"role": "system", "content": "You study how a person talks and behaves so his voice assistant can "
+                                                 "feel like it truly knows him."},
                    {"role": "user", "content": (
                        f"Existing profile of {USER_NAME}:\n{old or '(none yet)'}\n\nHabits: {_stats_line() or 'unknown'}\n\n"
-                       f"Their recent messages to the assistant:\n{msgs}\n\n"
-                       "Write the UPDATED profile in at most 110 words, plain text. Cover: how they talk (language mix such as "
-                       "Hinglish, slang, formality, typical message length, humour), what they care about and work on, what they "
-                       "usually ask for, and how they like answers (short or detailed, jokes or not). Describe patterns only; "
+                       f"His recent messages to the assistant:\n{msgs}\n\n"
+                       "Write the UPDATED profile in at most 110 words, plain text. Cover: how he talks (language mix such as "
+                       "Hinglish, slang, formality, typical message length, humour), what he cares about and works on, what he "
+                       "usually asks for, and how he likes answers (short or detailed, jokes or not). Describe patterns only; "
                        "never record passwords, OTPs or payment details. Keep older insights that still hold.")}],
                   task="chat", max_tokens=260, temp=0.3)
         if out:
@@ -714,7 +739,7 @@ def _update_profile():
 _speak_lock = threading.Lock()
 _edge_off_until = 0
 _edge_hint_shown = False
-FALLBACK_VOICE = "en-US-AvaNeural"   # tried automatically if VOICE itself returns no audio
+FALLBACK_VOICE = "en-US-EmmaNeural"   # tried automatically if VOICE itself returns no audio
 _capture = None                      # list that collects what she says during a turn (for memory)
 LAST_SKILL = "rule"                  # which skill handled the current turn (for habit tracking)
 
@@ -858,7 +883,7 @@ def _speak_gtts(text):
         from gtts import gTTS
         fd, path = tempfile.mkstemp(suffix=".mp3")
         os.close(fd)
-        gTTS(text, lang="en", tld="co.in").save(path)
+        gTTS(text, lang="en", tld="com").save(path)
         return play_audio(path)
     except ImportError:
         return False
@@ -874,7 +899,7 @@ def _speak_offline(text):
         import pyttsx3
         eng = pyttsx3.init()
         for v in eng.getProperty("voices"):
-            if any(k in (v.name or "").lower() for k in ("zira", "female", "hazel", "heera")):
+            if any(k in (v.name or "").lower() for k in ("zira", "female", "hazel")):
                 eng.setProperty("voice", v.id)
                 break
         eng.setProperty("rate", 185)
@@ -897,7 +922,19 @@ def speak(text):
         if not (_speak_edge(spoken) or _speak_piper(spoken) or _speak_gtts(spoken)):
             _speak_offline(spoken)
     time.sleep(0.25)
+    if threading.current_thread() is threading.main_thread():
+        flush_mic()          # drop what the mic heard of her own voice so she can't wake herself up
     store.set_status(state="listening")
+
+
+def flush_mic():
+    try:
+        st = SRC.stream.pyaudio_stream
+        n = st.get_read_available()
+        if n:
+            st.read(n, exception_on_overflow=False)
+    except Exception:
+        pass
 
 
 def test_voice():
@@ -917,7 +954,7 @@ def test_voice():
     fd, path = tempfile.mkstemp(suffix=".mp3")
     os.close(fd)
     try:
-        asyncio.run(_edge_synth(f"Hi {USER_NAME}, this is my online voice. If you can hear this, it works.", path, VOICE))
+        asyncio.run(_edge_synth("Hi Aneek, this is my online voice. If you can hear this, it works.", path, VOICE))
         print("Synthesis OK, file size:", os.path.getsize(path), "bytes. Playing...")
         print("Playback OK." if play_audio(path) else "Playback FAILED (pygame and the Windows player).")
     except Exception as e:
@@ -931,38 +968,63 @@ def test_voice():
 #  VOICE INPUT (offline Whisper)
 # =====================================================================
 rec = sr.Recognizer()
-rec.pause_threshold = 0.9
+rec.pause_threshold = float(PAUSE_THRESHOLD)
+rec.non_speaking_duration = min(0.35, float(PAUSE_THRESHOLD))
 rec.dynamic_energy_threshold = True
 SRC = None
 _whisper = None
+_whisper_fast = None
 HALLUCINATIONS = {"you", "thank you", "thanks", "thanks for watching", "bye", "okay", "uh", "um", "hmm", "the"}
-WHISPER_PROMPT = (f"{ASSISTANT_NAME}, {USER_NAME}, hey {ASSISTANT_NAME}, open Chrome, WhatsApp, Gmail, Word, VS Code, Spotify, "
+WHISPER_PROMPT = ("Ashie, Aneek, hey Ashie, open Chrome, WhatsApp, Gmail, Word, VS Code, Spotify, "
                   "send an email, text, click, scroll, settings, Wi-Fi.")
 
 
 def init_whisper():
-    global _whisper
+    global _whisper, _whisper_fast
     from faster_whisper import WhisperModel
     print(f"Loading offline speech model '{WHISPER_MODEL}' (CPU)...")
     _whisper = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8", cpu_threads=WHISPER_THREADS)
+    _whisper_fast = _whisper
+    if WAKE_FAST and WAKE_MODEL and WAKE_MODEL != WHISPER_MODEL:
+        try:
+            print(f"Loading fast wake-word model '{WAKE_MODEL}'...")
+            _whisper_fast = WhisperModel(WAKE_MODEL, device="cpu", compute_type="int8", cpu_threads=2)
+        except Exception as e:
+            print("(fast wake model unavailable, using the main model)", repr(e))
+            _whisper_fast = _whisper
 
 
 _last_wav = None
 
 
-def transcribe(audio):
+def transcribe_array(arr, fast=False):
+    """fast=True uses the tiny wake-word model (quick, rougher); otherwise the main model."""
     global _last_wav
-    raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
-    arr = np.frombuffer(raw, np.int16).astype(np.float32) / 32768.0
     _last_wav = arr
-    if len(arr) < 8000:
+    if len(arr) < (4800 if fast else 8000):
         return ""
-    segs, _ = _whisper.transcribe(arr, language="en", beam_size=1, vad_filter=True,
-                                  initial_prompt=WHISPER_PROMPT, condition_on_previous_text=False)
+    model = _whisper_fast if (fast and _whisper_fast is not None) else _whisper
+    segs, _ = model.transcribe(arr, language="en", beam_size=1, vad_filter=True, without_timestamps=True,
+                               initial_prompt=WHISPER_PROMPT, condition_on_previous_text=False)
     text = " ".join(s.text.strip() for s in segs if getattr(s, "no_speech_prob", 0) < 0.6).strip()
     if re.sub(r"[^a-z ]", "", text.lower()).strip() in HALLUCINATIONS:
         return ""
     return text
+
+
+def transcribe(audio):
+    raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
+    return transcribe_array(np.frombuffer(raw, np.int16).astype(np.float32) / 32768.0)
+
+
+def hear_audio(timeout=2, limit=12):
+    """Records one phrase and returns it as a 16 kHz float array (None if nobody spoke)."""
+    try:
+        audio = rec.listen(SRC, timeout=timeout, phrase_time_limit=limit)
+    except sr.WaitTimeoutError:
+        return None
+    raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
+    return np.frombuffer(raw, np.int16).astype(np.float32) / 32768.0
 
 
 # =====================================================================
@@ -1007,6 +1069,22 @@ def is_your_voice(wav_16k):
         return True
     profile = np.load(VOICE_PROFILE_PATH)
     return _cosine(emb, profile) >= VOICE_MATCH_THRESHOLD
+
+
+def set_voice_lock(on):
+    """Turns speaker verification on/off right now and remembers it in config.json."""
+    global VOICE_LOCK_ENABLED
+    VOICE_LOCK_ENABLED = bool(on)
+    try:
+        cfg = load_json(CONFIG_PATH, {})
+        for k in [k for k in cfg if k.lower() == "voice_lock_enabled"]:
+            del cfg[k]
+        cfg["voice_lock_enabled"] = VOICE_LOCK_ENABLED
+        CONFIG_PATH.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        print("(couldn't save voice-lock setting)", e)
+    store.set_status(voice_lock=VOICE_LOCK_ENABLED)
+    store.log("system", "Voice lock " + ("ON" if on else "OFF"))
 
 
 def enroll_voice():
@@ -1165,13 +1243,17 @@ def _groq_request(body):
 
 def _groq_chat(model, messages, json_mode, max_tokens, temp, effort="low"):
     is_oss = "gpt-oss" in model
-    # gpt-oss models "think" first and the thinking counts toward the limit, so leave headroom
+    ml = model.lower()
+    thinky = is_oss or any(k in ml for k in ("qwen3", "deepseek-r1", "r1-distill", "reasoner", "-thinking"))
+    # reasoning models "think" first and the thinking counts toward the limit, so leave headroom
     body = {"model": model, "messages": messages, "temperature": temp,
-            "max_completion_tokens": max_tokens + (700 if is_oss else 0)}
+            "max_completion_tokens": max_tokens + (700 if thinky else 0)}
     extras = {}
     if is_oss:
         extras["reasoning_effort"] = effort
         extras["include_reasoning"] = False
+    elif thinky:
+        extras["reasoning_format"] = "hidden"
     if json_mode:
         extras["response_format"] = {"type": "json_object"}
     try:
@@ -1183,11 +1265,67 @@ def _groq_chat(model, messages, json_mode, max_tokens, temp, effort="low"):
             raise
     try:
         text = (data["choices"][0]["message"].get("content") or "").strip()
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()     # some models leak their reasoning
     except Exception:
         text = ""
     if not text:
         raise GroqError("empty", "empty reply")
     return text
+
+
+_NOT_CHAT = ("whisper", "tts", "guard", "safeguard", "compound", "orpheus", "embed", "prompt", "distil")
+
+
+def _size_b(mid):
+    """Parameter count in billions parsed from a model id ('...-120b' -> 120). 0 if the id doesn't say."""
+    m = re.search(r"(?<![a-z\d.])(\d+(?:\.\d+)?)b(?![a-z])", mid.lower())
+    return float(m.group(1)) if m else 0.0
+
+
+_BIG_HINT = re.compile(r"kimi|k2|maverick|405b|large|opus|gpt-oss-120b|qwen3-?(?:max|235)|\bpro\b", re.I)
+_FAST_HINT = re.compile(r"instant|flash|mini|scout|lite|small|oss-20b", re.I)
+_last_refresh = 0
+
+
+def refresh_groq_models():
+    """Asks Groq which models are live and prunes the lists, so a retired model can't break Ashie again."""
+    global _last_refresh
+    if not GROQ_KEY:
+        return
+    _last_refresh = time.time()
+    try:
+        req = urllib.request.Request("https://api.groq.com/openai/v1/models",
+                                     headers={"Authorization": "Bearer " + GROQ_KEY, "User-Agent": "Ashie-Assistant/2.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            live_full = [m for m in json.loads(r.read().decode("utf-8")).get("data", []) if m.get("active", True)]
+            live = [m["id"] for m in live_full]
+    except Exception as e:
+        print("(couldn't check Groq's model list - using the built-in names)", repr(e)[:100])
+        return
+    chat_ok = [m for m in live if not any(x in m.lower() for x in _NOT_CHAT)]
+    if not chat_ok:
+        return
+    if GROQ_AUTO_MODELS:
+        # rank by what Groq says is live right now: newest big model for quality, newest small one for speed
+        created = {m["id"]: (m.get("created") or 0) for m in live_full}
+        newest = lambda ids: sorted(ids, key=lambda i: created.get(i, 0), reverse=True)
+        big = [m for m in chat_ok if _size_b(m) >= 60 or _BIG_HINT.search(m)]
+        small = [m for m in chat_ok if m not in big]
+        quick = [m for m in chat_ok if 0 < _size_b(m) <= 40 or _FAST_HINT.search(m)]
+        best = newest(big) + newest(small)
+        picks = {"chat": best, "code": best, "fast": newest(quick) + best}
+        for name, chain in (("chat", GROQ_CHAT_MODELS), ("fast", GROQ_FAST_MODELS), ("code", GROQ_CODE_MODELS)):
+            old = [m for m in chain if m in live]                      # your old picks stay as fallbacks
+            merged = list(dict.fromkeys(picks[name][:3] + old))[:5]
+            chain[:] = merged
+    else:
+        for name, chain in (("chat", GROQ_CHAT_MODELS), ("fast", GROQ_FAST_MODELS), ("code", GROQ_CODE_MODELS)):
+            keep = [m for m in chain if m in live]
+            if not keep:
+                keep = chat_ok[:2]
+                print(f"(groq {name}: none of my usual models are live, switching to {keep})")
+            chain[:] = keep
+    print("Groq models in use -> chat:", GROQ_CHAT_MODELS, "| fast:", GROQ_FAST_MODELS)
 
 
 def groq_llm(messages, task="chat", json_mode=False, max_tokens=350, temp=0.5):
@@ -1892,12 +2030,82 @@ def ddgs_cls():
         return DDGS
 
 
-def web_search(q, n=5):
-    try:
-        return list(ddgs_cls()().text(q, max_results=n))
-    except Exception as e:
-        print("(search error)", e)
+_UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                     "Chrome/126.0 Safari/537.36", "Accept-Language": "en-IN,en;q=0.9"}
+
+
+def _http_get(url, timeout=10):
+    with urllib.request.urlopen(urllib.request.Request(url, headers=_UA), timeout=timeout) as r:
+        return r.read().decode("utf-8", "ignore")
+
+
+def _rss_items(url, n):
+    """Reads an RSS feed with the standard library only (no packages that can break)."""
+    root = ET.fromstring(_http_get(url))
+    out = []
+    for it in root.iter("item"):
+        title = html.unescape(it.findtext("title") or "").strip()
+        body = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html.unescape(it.findtext("description") or ""))).strip()
+        if title:
+            out.append({"title": title, "body": body or title, "href": (it.findtext("link") or "").strip()})
+        if len(out) >= n:
+            break
+    return out
+
+
+def _google_news(q, n):
+    return _rss_items("https://news.google.com/rss/search?q=" + urllib.parse.quote(q) +
+                      "&hl=en-IN&gl=IN&ceid=IN:en", n)
+
+
+def _bing_rss(q, n):
+    return _rss_items("https://www.bing.com/search?format=rss&setlang=en-IN&q=" + urllib.parse.quote(q), n)
+
+
+def _ddgs_search(q, n, news=False):
+    """ddgs is flaky ('No results found' when one backend is blocked), so try several settings."""
+    cls = ddgs_cls()
+    tries = [{}, {"region": "in-en"}, {"region": "wt-wt"}] if news else \
+            [{}, {"region": "in-en"}, {"backend": "duckduckgo"}, {"backend": "bing"}, {"backend": "brave"},
+             {"backend": "google"}, {"backend": "yahoo"}]
+    last = None
+    for kw in tries:
+        try:
+            d = cls()
+            res = list(d.news(q, max_results=n, **kw) if news else d.text(q, max_results=n, **kw))
+            if res:
+                return [{"title": r.get("title", ""), "body": r.get("body", "") or r.get("title", ""),
+                         "href": r.get("href") or r.get("url", "")} for r in res]
+        except Exception as e:
+            last = e
+    if last:
+        raise last
+    return []
+
+
+NEWSY = re.compile(r"\b(news|headlines?|latest|breaking|today'?s|current events|happening)\b", re.I)
+
+
+def web_search(q, n=5, news=None):
+    """Tries several free sources in order until one gives results. Returns [{'title','body','href'}]."""
+    q = (q or "").strip()
+    if not q:
         return []
+    news = bool(NEWSY.search(q)) if news is None else news
+    steps = [("ddgs news", lambda: _ddgs_search(q, n, True)), ("google news", lambda: _google_news(q, n)),
+             ("bing", lambda: _bing_rss(q, n)), ("ddgs", lambda: _ddgs_search(q, n))] if news else \
+            [("ddgs", lambda: _ddgs_search(q, n)), ("bing", lambda: _bing_rss(q, n)),
+             ("google news", lambda: _google_news(q, n))]
+    for name, fn in steps:
+        try:
+            res = fn()
+            if res:
+                print(f"(search via {name}: {len(res)} results)")
+                return res[:n]
+            print(f"(search via {name}: nothing)")
+        except Exception as e:
+            print(f"(search via {name} failed: {type(e).__name__}: {str(e)[:90]})")
+    return []
 
 
 # =====================================================================
@@ -2280,7 +2488,11 @@ def skill_code(instructions):
 def skill_web(q):
     res = web_search(q)
     if not res:
-        return speak("I couldn't search the web right now.")
+        out = llm([{"role": "system", "content": persona()},
+                   {"role": "user", "content": f"{q}\n\n(Live web search failed just now. Answer in 1-3 spoken "
+                                               "sentences from what you know, and mention briefly that it "
+                                               "might be out of date.)"}], max_tokens=200)
+        return speak(out or "I couldn't search the web right now.")
     ctx = "\n".join(f"- {r.get('title', '')}: {r.get('body', '')}" for r in res)
     out = llm([{"role": "system", "content": persona()},
                {"role": "user", "content": f"Question: {q}\n\nWeb results:\n{ctx}\n\nAnswer in 1-3 spoken "
@@ -2299,11 +2511,12 @@ def skill_weather(city):
 
 
 def skill_news(topic):
-    try:
-        items = list(ddgs_cls()().news(topic or "top news India", max_results=4))
-        speak("Here are the headlines. " + " ... ".join(i["title"] for i in items[:3]))
-    except Exception:
-        speak("I couldn't fetch the news right now.")
+    topic = re.sub(r"^(?:the |latest |top |today'?s |recent |breaking )*(?:news|headlines)\s*(?:about|on|for|in)?\s*", "",
+                   (topic or "").strip(), flags=re.I) or (topic or "").strip() or "top news India"
+    items = web_search(topic if "news" in topic.lower() else topic + " news", n=5, news=True)
+    if not items:
+        return speak("I couldn't fetch the news right now. Looks like my news sources are unreachable.")
+    speak("Here are the headlines. " + " ... ".join(re.sub(r"\s+-\s+[^-]{2,40}$", "", i["title"]) for i in items[:3]))
 
 
 def skill_youtube(q):
@@ -2554,7 +2767,7 @@ Skills:
 - code: write a program or script file. args: instructions
 - web: needs up-to-date or factual info from the internet. args: query
 - weather: args: city ("" if none)
-- news: args: topic
+- news: headlines / "latest news" / "what's happening". args: topic ("" for general top news)
 - youtube: play a video or song. args: query
 - timer: countdown timer, or a reminder a few minutes/hours from now. args: seconds (number), label
 - reminder: remind at a clock time, a date or repeatedly. args: text, when (local time as "YYYY-MM-DD HH:MM" 24h, worked out from the current time you are given), repeat ("none", "daily", "weekdays" or "weekly")
@@ -2579,6 +2792,7 @@ Examples:
 "change to my youtube tab" -> {"skill":"tab","args":{"target":"youtube"}}
 "copy all the text on the screen" -> {"skill":"copy_screen","args":{}}
 "open notepad and type a shopping list" -> {"skill":"agent","args":{"goal":"open notepad and type a shopping list"}}
+"latest news about technology" -> {"skill":"news","args":{"topic":"technology"}}
 "how are you" -> {"skill":"chat","args":{}}"""
 
 
@@ -2618,7 +2832,7 @@ SKILLS = {
 
 def route_and_run(raw):
     ctx_txt = recent_context(3 if groq_available() else 2)
-    content = (f"Recent conversation (context only, for follow-ups like 'send it to them' or 'make it shorter'):\n"
+    content = (f"Recent conversation (context only, for follow-ups like 'send it to him' or 'make it shorter'):\n"
                f"{ctx_txt}\n\nNew command: {raw}") if ctx_txt else raw
     content = f"Current local time: {datetime.datetime.now():%A %Y-%m-%d %H:%M}\n" + content
     plan = llm_json([{"role": "system", "content": ROUTER_SYS}, {"role": "user", "content": content}],
@@ -2644,7 +2858,7 @@ COMPOUND = re.compile(r"\b(and then|then|and (?:text|message|send|write|email|ma
 EXIT_WORDS = {"exit", "quit", "goodbye", "bye", "bye ashie", "stop assistant", "close assistant", "shut down assistant"}
 HELP = ("I can open apps and websites, text people on WhatsApp, write and send emails, write documents in Word, "
         "write code, search the web, set timers, read your screen, click things you name, control volume, "
-        "windows and settings with your confirmation, and just chat. Press F8 to talk without my name.")
+        "windows and settings with your confirmation, and just chat. Start every command with my name.")
 
 
 def rules(raw, t):
@@ -2654,6 +2868,27 @@ def rules(raw, t):
         return "exit"
     if t in ("help", "what can you do"):
         speak(HELP); return "ok"
+    if re.search(r"\bvoice\s*(?:lock|recognition|verification|check|match(?:ing)?)\b", t) or \
+            re.search(r"(?:respond|listen|answer)\s+to\s+(?:anyone|everyone|any\s+voice)|(?:stop|don'?t)\s+(?:checking|verifying)\s+my\s+voice|only\s+(?:respond|listen)\s+to\s+me", t):
+        if re.match(r"(?:is|what|what's|whats|status|check)\b", t):
+            speak("Voice lock is " + ("on" if VOICE_LOCK_ENABLED else "off") + ".")
+            return "ok"
+        off = re.search(r"\b(?:off|disable|disabled|skip|stop|without|no)\b|don'?t|anyone|everyone|any\s+voice", t)
+        on = re.search(r"\b(?:on|enable|enabled|start|only)\b", t)
+        if off and not (on and re.search(r"\bturn on\b|\benable\b|only", t)):
+            set_voice_lock(False)
+            speak(f"Voice lock off. I'll answer whenever anyone says {ASSISTANT_NAME}.")
+            return "ok"
+        if on:
+            if not VOICE_PROFILE_PATH.exists():
+                set_voice_lock(True)
+                enroll_voice()
+            else:
+                set_voice_lock(True)
+                speak(f"Voice lock on. I'll only obey your voice, {USER_NAME}.")
+            return "ok"
+        speak("Voice lock is " + ("on" if VOICE_LOCK_ENABLED else "off") + ". Say turn voice lock on or off to change it.")
+        return "ok"
     if re.fullmatch(r"who (made|created|built|programmed) you|who is your (creator|maker|developer)", t):
         speak(f"{USER_NAME} made me. He's a hardcore programmer from India, so I'm pretty proud."); return "ok"
     if t in ("who am i", "what's my name", "what is my name"):
@@ -2972,7 +3207,9 @@ def status_loop():
     while True:
         try:
             store.set_status(brain=_brain_label(), model=GROQ_CHAT_MODELS[0] if groq_available() else LLM_MODEL,
-                             started=STARTED, voice_lock=bool(VOICE_LOCK_ENABLED), hotkey=HOTKEY.upper())
+                             started=STARTED, voice_lock=bool(VOICE_LOCK_ENABLED), hotkey=(HOTKEY or "").upper())
+            if GROQ_KEY and time.time() - _last_refresh > 6 * 3600:
+                threading.Thread(target=refresh_groq_models, daemon=True).start()
         except Exception:
             pass
         time.sleep(5)
@@ -3018,13 +3255,53 @@ def setup_wizard():
     print("Saved. Next: python ashie.py --set-groq-key (optional cloud brain), then python ashie.py\n")
 
 
+GREET_WORDS = {"hey", "hay", "hi", "hii", "hiya", "hello", "ok", "okay", "yo", "oh"}
+
+
+def _is_wake(w):
+    return bool(w) and (w in WAKE_VARIANTS or difflib.SequenceMatcher(None, w, ASSISTANT_NAME.lower()).ratio() >= 0.8)
+
+
 def strip_wake(raw):
+    """Finds 'Ashie' / 'Hey Ashie' in the first few words. Also catches 'a she' / 'ash ie' style splits."""
+    # Strict: the name must be the FIRST word, or come right after "hey / hi / ok". Saying it mid-sentence doesn't count.
     words = raw.split()
-    for i, w in enumerate(words[:4]):
-        wl = re.sub(r"[^a-z]", "", w.lower())
-        if wl in WAKE_VARIANTS or difflib.SequenceMatcher(None, wl, ASSISTANT_NAME.lower()).ratio() >= 0.8:
+    clean = [re.sub(r"[^a-z]", "", w.lower()) for w in words]
+    i = 0
+    while i < min(2, len(words)) and clean[i] in GREET_WORDS:
+        i += 1
+    if i < len(words) and clean[i]:
+        if i + 1 < len(words) and clean[i + 1] and len(clean[i]) <= 3 and (clean[i] + clean[i + 1]) in WAKE_VARIANTS:
+            return True, " ".join(words[i + 2:]).strip(" ,.!?")      # heard as "a she" / "ash ie"
+        if _is_wake(clean[i]):
             return True, " ".join(words[i + 1:]).strip(" ,.!?")
     return False, raw
+
+
+def wait_for_wake():
+    """Idle listening. Returns None (nothing / not for her), '' (name only), or the command text."""
+    t0 = time.time()
+    arr = hear_audio(timeout=2, limit=12)
+    if arr is None:
+        return None
+    gate = transcribe_array(arr, fast=True)               # tiny model: just spot the name
+    if not gate:
+        return None
+    woke, rest = strip_wake(gate)
+    if not woke:
+        print("(ignored: no wake word)", "-", gate[:60])
+        return None
+    if VOICE_LOCK_ENABLED and VOICE_PROFILE_PATH.exists() and not is_your_voice(arr):
+        print(f"🔒 ignored (voice didn't match {USER_NAME}):", gate)
+        return None
+    if rest and _whisper_fast is not _whisper:            # she was named AND given a command -> re-hear it accurately
+        full = transcribe_array(arr)
+        woke2, rest2 = strip_wake(full)
+        if woke2:
+            rest = rest2
+    print(f"🎤 heard: {gate if not rest else rest}   (wake check {time.time() - t0:.2f}s)")
+    store.set_status(last_heard=(rest or gate)[:240])
+    return rest
 
 
 def beep():
@@ -3065,11 +3342,13 @@ def process(raw):
 def greet():
     h = datetime.datetime.now().hour
     g = "Good morning" if h < 12 else "Good afternoon" if h < 17 else "Good evening"
-    speak(f"{g} {USER_NAME}! {ASSISTANT_NAME} here and ready. Say my name, or press {HOTKEY.upper()}, whenever you need me.")
+    speak(f"{g} {USER_NAME}! {ASSISTANT_NAME} here and ready. Start every command with {ASSISTANT_NAME} or hey {ASSISTANT_NAME}.")
 
 
 def main():
-    global SRC
+    global SRC, VOICE_LOCK_ENABLED
+    if "--no-voice-lock" in sys.argv:
+        VOICE_LOCK_ENABLED = False
     if "--setup" in sys.argv:
         return setup_wizard()
     if not CONFIG_PATH.exists() and sys.stdin and sys.stdin.isatty():
@@ -3085,6 +3364,9 @@ def main():
     if "--test-brain" in sys.argv:
         return test_brain()
     print(f"=== {ASSISTANT_NAME} starting ===")
+    print(_CONFIG_NOTE)
+    print(f"Voice lock: {'ON (only your voice)' if VOICE_LOCK_ENABLED else 'OFF (anyone saying the name triggers her)'}"
+          f" | wake model: {WAKE_MODEL if WAKE_FAST else WHISPER_MODEL}")
     if GROQ_KEY:
         print(f"Brain: Groq cloud ({GROQ_CHAT_MODELS[0]}) when online, local {LLM_MODEL} as backup")
     else:
@@ -3094,14 +3376,16 @@ def main():
     store.set_status(state="starting")
     threading.Thread(target=status_loop, daemon=True).start()
     threading.Thread(target=reminder_loop, daemon=True).start()
+    threading.Thread(target=refresh_groq_models, daemon=True).start()
     if DASHBOARD_ENABLED and "--no-dashboard" not in sys.argv:
         start_dashboard()
     init_whisper()
-    try:
-        import keyboard
-        keyboard.add_hotkey(HOTKEY, HOTKEY_EVT.set)
-    except Exception:
-        print("(hotkey unavailable - wake word still works)")
+    if HOTKEY:
+        try:
+            import keyboard
+            keyboard.add_hotkey(HOTKEY, HOTKEY_EVT.set)
+        except Exception:
+            print("(hotkey unavailable - wake word still works)")
     mic = sr.Microphone(device_index=MIC_INDEX)
     with mic as SRC:
         print("Calibrating microphone, stay quiet for a second...")
@@ -3113,44 +3397,36 @@ def main():
             enroll_voice()
         greet()
         store.set_status(state="listening")
-        active_until = time.time() + 60
         while True:
             try:
                 try:
-                    typed = COMMAND_Q.get_nowait()
+                    typed = COMMAND_Q.get_nowait()          # typed on the dashboard (no voice, so no wake word)
                 except queue.Empty:
                     typed = None
                 if typed:
                     if not process(typed):
                         break
-                    active_until = time.time() + ACTIVE_SECONDS
                     continue
-                forced = HOTKEY_EVT.is_set()
-                if forced:
+                # EVERY spoken command must start with "Ashie" / "Hey Ashie"; anything else is ignored.
+                if HOTKEY and HOTKEY_EVT.is_set():
                     HOTKEY_EVT.clear()
                     beep()
-                raw = listen(timeout=8 if forced else 2, limit=14)
-                maybe_stop_ollama()
-                if not raw:
-                    if forced:
-                        speak("I'm here, but I didn't hear anything.")
-                    continue
-                woke, rest = strip_wake(raw)
-                if woke:
+                    rest = listen(timeout=8, limit=14)
                     if not rest:
-                        beep()
-                        rest = listen(timeout=7, limit=14)
-                        if not rest:
-                            speak(f"Yes {USER_NAME}? I'm listening.")
-                            continue
-                elif forced or time.time() < active_until:
-                    rest = raw
+                        continue
                 else:
-                    print("(ignored: no wake word)")
-                    continue
+                    rest = wait_for_wake()
+                    maybe_stop_ollama()
+                    if rest is None:
+                        continue
+                if not rest:                                # only her name was heard: wait for the command itself
+                    beep()
+                    rest = listen(timeout=7, limit=14)
+                    if not rest:
+                        speak(f"Yes {USER_NAME}? I'm listening.")
+                        continue
                 if not process(rest):
                     break
-                active_until = time.time() + ACTIVE_SECONDS
             except pyautogui.FailSafeException:
                 speak("Emergency stop triggered.")
             except KeyboardInterrupt:
