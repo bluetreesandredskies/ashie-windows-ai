@@ -162,7 +162,7 @@ def list_notes():
 
 def add_note(text, pinned=False, source="voice"):
     _migrate_notes()
-    n = {"id": _id(), "text": text.strip()[:1000], "created": _now().isoformat(), "pinned": pinned, "source": source}
+    n = {"id": _id(), "text": text.strip()[:8000], "created": _now().isoformat(), "pinned": pinned, "source": source}
     with _lock:
         items = _read("notes.json", [])
         items.append(n)
