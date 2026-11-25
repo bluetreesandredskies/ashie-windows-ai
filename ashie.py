@@ -1,8 +1,8 @@
 """
-ASHIE - a free, local-first voice assistant for Aneek's Windows PC.
+ASHIE - a free, local-first voice assistant for your Windows PC.
 
 Ears  : faster-whisper (offline, runs on CPU so your GPU stays free)
-Lock  : resemblyzer voiceprint check (offline) - only Aneek's voice is obeyed
+Lock  : resemblyzer voiceprint check (offline) - only the owner's voice is obeyed
 Voice : Microsoft neural voice via edge-tts (free, no key) -> Piper (offline neural,
         free) -> Google gTTS -> Windows SAPI voice, picking the best one available
 Brain : Groq cloud models when online (fast, smart) -> local Ollama model when offline
@@ -35,9 +35,9 @@ import psutil
 # =====================================================================
 #  CONFIG  (edit this section)
 # =====================================================================
-USER_NAME = "Aneek"
+USER_NAME = "User"            # your name (what Ashie calls you). Can also be set in config.json
 ASSISTANT_NAME = "Ashie"
-USER_PROFILE = "He lives in India and is a hardcore programmer who loves building things with code."
+USER_PROFILE = ""               # optional: a line about you, e.g. "Lives in London, works as a designer, loves cooking."
 
 WAKE_VARIANTS = {"ashie", "ashi", "ashy", "ashe", "asha", "ashee", "aashi", "aashie", "ashley", "archie",
                  "ash", "ashii", "ashiee", "aashe", "aashy", "ashye"}
@@ -102,6 +102,11 @@ OLLAMA_IDLE_STOP_SECONDS = 300
 CHROME_PROFILE = "Default"   # chrome://version -> "Profile Path" last folder (Default / Profile 1 ...)
 DEFAULT_CITY = ""            # weather city, "" = auto-detect (e.g. "Srinagar")
 EMAIL_METHOD = "gmail"       # "gmail" (Chrome, uses your logged-in Gmail) or "outlook" (desktop Outlook)
+GMAIL_ADDRESS = ""           # OPTIONAL but most reliable: your Gmail address + an App Password (see SETUP_GUIDE) lets Ashie
+GMAIL_APP_PASSWORD = ""      # send mail with real attachments in the background, no browser clicking needed
+AI_DEFAULT_SITE = "claude"   # chatbot used for "ask AI ..." when you don't name one: claude, chatgpt, deepseek, gemini, perplexity, copilot, grok
+AI_WAIT_SECONDS = 150        # how long she waits for a chatbot website to finish answering
+FILE_SEARCH_SECONDS = 25     # how long one file search on your PC may run
 
 # --- Dashboard (local web UI) ---------------------------------------------
 DASHBOARD_ENABLED = True
@@ -290,7 +295,7 @@ def history_messages(n=HISTORY_TURNS, max_chars=None):
 
 def recent_context(n=3):
     items = list(HISTORY)[-n:]
-    return "\n".join(f"{USER_NAME}: {e['user']}\n{ASSISTANT_NAME}: {e.get('assistant', '')[:150]}" for e in items)
+    return "\n".join(f"{USER_NAME}: {e['user']}\n{ASSISTANT_NAME}: {e.get('assistant', '')[:280]}" for e in items)
 
 
 _folding = False
@@ -309,7 +314,7 @@ def _fold_summary():
             return
         convo = "\n".join(f"{USER_NAME}: {e['user']}\n{ASSISTANT_NAME}: {e.get('assistant', '')}" for e in batch)
         out = llm([{"role": "system", "content": "You maintain a compact memory of past conversations between "
-                                                 "a user and his voice assistant."},
+                                                 "a user and their voice assistant."},
                    {"role": "user", "content": f"Existing summary:\n{old or '(none)'}\n\nNew conversations:\n{convo}\n\n"
                                                "Write the updated summary in at most 120 words. Keep lasting details "
                                                "(people, projects, plans, preferences, unfinished to-dos). Drop small "
@@ -354,7 +359,7 @@ def _learn(text):
             return
         out = llm_json([{"role": "user", "content": (
             f"The speaker is {USER_NAME}. Message: \"{text}\"\n"
-            f"Extract only LASTING facts about {USER_NAME} (preferences, people in his life, projects, routines, "
+            f"Extract only LASTING facts about {USER_NAME} (preferences, people in their life, projects, routines, "
             "personal details) that would still be useful to remember months from now. Ignore commands, questions, "
             "small talk and temporary things. Reply as JSON: {\"facts\": [\"short third-person sentence\"]} "
             "with an empty list if there is nothing worth keeping.")}],
@@ -633,7 +638,7 @@ def _hour_label(h):
 
 
 def note_usage(user, skill):
-    """Cheap, offline pattern tracking: what he asks for, when, how long his messages are, how he phrases things."""
+    """Cheap, offline pattern tracking: what they ask for, when, how long their messages are, how they phrase things."""
     words = re.findall(r"[A-Za-z']+", user)
     with _mem_lock:
         st = MEM["stats"]
@@ -680,7 +685,7 @@ def style_block():
     big = groq_available()
     out = ""
     if MEM.get("profile"):
-        out += f"\nWhat {USER_NAME} is like and how he talks (learned over time): {MEM['profile']}"
+        out += f"\nWhat {USER_NAME} is like and how they talk (learned over time): {MEM['profile']}"
     habits = _stats_line()
     if habits:
         out += f"\nHabits: {habits}."
@@ -689,10 +694,10 @@ def style_block():
         import random
         n = 4 if big else 2
         pick = s[-2:] + random.sample(s[:-2], min(len(s[:-2]), max(0, n - 2)))
-        out += (f"\nExamples of how he phrases things (only to match his tone, never quote them): "
+        out += (f"\nExamples of how they phrase things (only to match their tone, never quote them): "
                 + " | ".join(p[:120] for p in pick))
     if out:
-        out += f"\nMatch his way of talking naturally (vocabulary, energy, humour) while staying yourself."
+        out += f"\nMatch their way of talking naturally (vocabulary, energy, humour) while staying yourself."
     return out
 
 
@@ -708,14 +713,14 @@ def _update_profile():
             recent = [e["user"] for e in list(HISTORY)[-14:]]
             old, samples = MEM.get("profile", ""), MEM["samples"][-8:]
         msgs = "\n".join("- " + m for m in recent + samples if m)
-        out = llm([{"role": "system", "content": "You study how a person talks and behaves so his voice assistant can "
-                                                 "feel like it truly knows him."},
+        out = llm([{"role": "system", "content": "You study how a person talks and behaves so their voice assistant can "
+                                                 "feel like it truly knows them."},
                    {"role": "user", "content": (
                        f"Existing profile of {USER_NAME}:\n{old or '(none yet)'}\n\nHabits: {_stats_line() or 'unknown'}\n\n"
-                       f"His recent messages to the assistant:\n{msgs}\n\n"
-                       "Write the UPDATED profile in at most 110 words, plain text. Cover: how he talks (language mix such as "
-                       "Hinglish, slang, formality, typical message length, humour), what he cares about and works on, what he "
-                       "usually asks for, and how he likes answers (short or detailed, jokes or not). Describe patterns only; "
+                       f"Their recent messages to the assistant:\n{msgs}\n\n"
+                       "Write the UPDATED profile in at most 110 words, plain text. Cover: how they talk (language mix such as "
+                       "bilingual blends, slang, formality, typical message length, humour), what they care about and work on, what they "
+                       "usually asks for, and how they like answers (short or detailed, jokes or not). Describe patterns only; "
                        "never record passwords, OTPs or payment details. Keep older insights that still hold.")}],
                   task="chat", max_tokens=260, temp=0.3)
         if out:
@@ -954,7 +959,7 @@ def test_voice():
     fd, path = tempfile.mkstemp(suffix=".mp3")
     os.close(fd)
     try:
-        asyncio.run(_edge_synth("Hi Aneek, this is my online voice. If you can hear this, it works.", path, VOICE))
+        asyncio.run(_edge_synth(f"Hi {USER_NAME}, this is my online voice. If you can hear this, it works.", path, VOICE))
         print("Synthesis OK, file size:", os.path.getsize(path), "bytes. Playing...")
         print("Playback OK." if play_audio(path) else "Playback FAILED (pygame and the Windows player).")
     except Exception as e:
@@ -975,7 +980,7 @@ SRC = None
 _whisper = None
 _whisper_fast = None
 HALLUCINATIONS = {"you", "thank you", "thanks", "thanks for watching", "bye", "okay", "uh", "um", "hmm", "the"}
-WHISPER_PROMPT = ("Ashie, Aneek, hey Ashie, open Chrome, WhatsApp, Gmail, Word, VS Code, Spotify, "
+WHISPER_PROMPT = (f"Ashie, {USER_NAME}, hey Ashie, open Chrome, WhatsApp, Gmail, Word, VS Code, Spotify, "
                   "send an email, text, click, scroll, settings, Wi-Fi.")
 
 
@@ -1598,11 +1603,15 @@ def persona(query=None):
     earlier = f"\nWhat you remember from older conversations: {summary}" if summary else ""
     now = datetime.datetime.now().strftime("%A %d %B %Y, %I:%M %p")
     return (f"You are {ASSISTANT_NAME}, a cheerful, witty young woman who is the voice assistant living on "
-            f"{USER_NAME}'s Windows PC. {USER_NAME} is your creator. {USER_PROFILE} "
+            f"{USER_NAME}'s Windows PC. {USER_NAME} is the person you work for. {USER_PROFILE} "
             "Talk like a close friend: warm, casual and brief (1 to 3 short sentences). Your replies are spoken "
             "aloud, so never use markdown, lists, code blocks or emojis. Use the conversation so far to understand "
             "follow-up questions. If you don't know something, say so honestly. "
-            f"Things you remember about {USER_NAME}:\n{facts}{earlier}{style_block()}"
+            "Be honest about actions: you can only really do things through your skills (writing documents, emailing with real "
+            "attachments, finding files, using chatbot websites, making notes). In a plain chat reply you have NOT done anything on "
+            "the PC, so never say you attached, sent, saved or opened something. If they ask for an action, tell them to say it as a "
+            "command, for example: Ashie, attach it to the mail. "
+            f"Things you remember about {USER_NAME}:\n{facts}{earlier}\n{artifacts_block()}{style_block()}"
             f"{recall_block(query) if query else ''}\nNow: {now}.")
 
 
@@ -2347,6 +2356,7 @@ def draft_email(instructions, subject_hint, to_name):
 
 
 def write_in_word(text, name="Ashie document"):
+    """Writes the text into a real .docx (always saved to disk), opens it in Word and returns the file path."""
     path = str(DOCS / f"{safe_name(name)}_{datetime.datetime.now():%Y%m%d_%H%M%S}.docx")
     try:
         import win32com.client
@@ -2359,81 +2369,17 @@ def write_in_word(text, name="Ashie document"):
             word.Activate()
         except Exception:
             pass
+        if os.path.exists(path):
+            return path
+    except Exception as e:
+        print("(Word COM failed, writing the .docx directly)", e)
+    try:
+        write_docx_file(path, text)
+        os.startfile(path)
         return path
     except Exception as e:
-        print("(Word COM failed, using keyboard method)", e)
-        sh("start winword")
-        if wait_for_text(["blank document"], timeout=25):
-            click_label("blank document", quiet=True)
-            time.sleep(2.5)
-        type_text(text)
+        print("(couldn't write or open the document)", e)
         return None
-
-
-def skill_email(to, subject, instructions, use_word=False):
-    to = (to or "").strip()
-    info = find_contact(to) if to else None
-    addr = (info or {}).get("email", "")
-    if not addr and to:
-        cand = spoken_to_email(to)
-        addr = cand if valid_email(cand) else ""
-    for _ in range(2):
-        if addr:
-            break
-        a = ask("What's the email address? You can say it like name at gmail dot com.")
-        if not a:
-            return speak("Okay, I'll skip the email.")
-        cand = spoken_to_email(a)
-        if valid_email(cand):
-            addr = cand
-        else:
-            info = find_contact(a)
-            addr = (info or {}).get("email", "")
-    if not addr:
-        return speak("I couldn't get a valid email address. Add the person to CONTACTS to make it easy.")
-    instructions = (instructions or "").strip() or ask("What should the email say?")
-    if not instructions:
-        return speak("Okay, never mind.")
-
-    speak("Drafting your email.")
-    subj, body = draft_email(instructions, subject, to if "@" not in to else "")
-    if use_word:
-        p = write_in_word(f"Subject: {subj}\n\n{body}", "Email " + subj)
-        speak("I wrote it in Word." + (" Saved in your Ashie documents folder." if p else ""))
-
-    if EMAIL_METHOD == "outlook":
-        try:
-            import win32com.client
-            ol = win32com.client.Dispatch("Outlook.Application")
-            mail = ol.CreateItem(0)
-            mail.To, mail.Subject, mail.Body = addr, subj, body
-            mail.Display()
-            if confirm(f"Send this email to {spell_email(addr)}, subject: {subj}."):
-                mail.Send()
-                speak("Email sent!")
-            return
-        except Exception as e:
-            print("(Outlook failed, falling back to Gmail)", e)
-
-    url = ("https://mail.google.com/mail/?view=cm&fs=1&to=" + urllib.parse.quote(addr) +
-           "&su=" + urllib.parse.quote(subj) + "&body=" + urllib.parse.quote(body[:1500]))
-    open_chrome(url)
-    warned = False
-    end = time.time() + 90
-    while time.time() < end:
-        blob = " | ".join(t.lower() for t, *_ in screen_ocr()) if OCR_OK else "send subject"
-        if "sign in" in blob and not warned:
-            speak("Gmail needs you to sign in. I'll wait.")
-            warned = True
-        if "subject" in blob and "send" in blob:
-            break
-        time.sleep(1)
-    time.sleep(1.5)
-    if confirm(f"Your email to {spell_email(addr)} is ready. Subject: {subj}. Should I send it?"):
-        pyautogui.hotkey("ctrl", "enter")
-        time.sleep(3)
-        sent = OCR_OK and any("message sent" in t.lower() or "sent" == t.lower().strip() for t, *_ in screen_ocr())
-        speak("Email sent!" if sent or not OCR_OK else "I pressed send. Please glance at the screen to be sure.")
 
 
 def skill_write_doc(instructions):
@@ -2447,9 +2393,12 @@ def skill_write_doc(instructions):
               max_tokens=900, temp=0.6, ctx=4096)
     if not out:
         return speak("I couldn't reach my brain for that one.")
-    title = out.strip().splitlines()[0][:40]
+    title = re.sub(r"[#*]+", "", out.strip().splitlines()[0]).strip()[:60] or "Document"
     p = write_in_word(out, title)
-    speak("Done. It's open in Word." + (" I saved a copy in your Ashie documents folder." if p else ""))
+    remember_artifact("doc", title, p, out)
+    note_action(f"wrote the document '{title}' ({len(out.split())} words)" + (f", saved at {p}" if p else ", but could not save it as a file"))
+    speak("Done. It's open in Word and saved in your Ashie documents folder. Tell me who to send it to whenever you like."
+          if p else "I wrote it, but I couldn't save it as a file.")
 
 
 def skill_code(instructions):
@@ -2512,7 +2461,7 @@ def skill_weather(city):
 
 def skill_news(topic):
     topic = re.sub(r"^(?:the |latest |top |today'?s |recent |breaking )*(?:news|headlines)\s*(?:about|on|for|in)?\s*", "",
-                   (topic or "").strip(), flags=re.I) or (topic or "").strip() or "top news India"
+                   (topic or "").strip(), flags=re.I) or (topic or "").strip() or "top news today"
     items = web_search(topic if "news" in topic.lower() else topic + " news", n=5, news=True)
     if not items:
         return speak("I couldn't fetch the news right now. Looks like my news sources are unreachable.")
@@ -2688,10 +2637,11 @@ def observe():
     return f"Window: {title}\nVisible: " + " | ".join(items)
 
 
-def skill_agent(goal):
-    speak("Okay, working on it.")
+def skill_agent(goal, max_steps=14, quiet=False):
+    if not quiet:
+        speak("Okay, working on it.")
     log, seen = [], []
-    for step in range(14):
+    for step in range(max_steps):
         obs = observe()
         out = llm_json([{"role": "system", "content": AGENT_SYS},
                         {"role": "user", "content": f"GOAL: {goal}\nDONE SO FAR:\n" + ("\n".join(log[-8:]) or "(nothing)") +
@@ -2756,14 +2706,1123 @@ def skill_agent(goal):
 
 
 # =====================================================================
+#  WORKSPACE MEMORY: what Ashie wrote / found / noted, so "send it", "attach that",
+#  "make notes of that" refer to something real instead of a guess
+# =====================================================================
+ARTIFACTS_PATH = DATA / "artifacts.json"
+_art_lock = threading.RLock()
+ARTIFACTS = load_json(ARTIFACTS_PATH, [])
+if not isinstance(ARTIFACTS, list):
+    ARTIFACTS = []
+ARTIFACTS = [a for a in ARTIFACTS if isinstance(a, dict) and a.get("kind")][-25:]
+
+
+def _save_artifacts():
+    try:
+        with _art_lock:
+            ARTIFACTS_PATH.write_text(json.dumps(ARTIFACTS, indent=1, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def remember_artifact(kind, title, path=None, text=None):
+    """kind: doc | file | notes | email | ai_answer | explanation"""
+    rec = {"kind": kind, "title": (title or kind)[:80], "path": str(path) if path else "",
+           "text": (text or "")[:12000], "t": datetime.datetime.now().isoformat(timespec="seconds")}
+    with _art_lock:
+        ARTIFACTS.append(rec)
+        del ARTIFACTS[:-25]
+    _save_artifacts()
+    return rec
+
+
+def last_artifact(*kinds):
+    with _art_lock:
+        for a in reversed(ARTIFACTS):
+            if not kinds or a.get("kind") in kinds:
+                return a
+    return None
+
+
+def artifacts_block(n=4):
+    with _art_lock:
+        recent = list(ARTIFACTS[-n:])
+    if not recent:
+        return ""
+    lines = []
+    for a in reversed(recent):
+        where = f" (file {Path(a['path']).name})" if a.get("path") else ""
+        lines.append(f"- {a['kind']}: \"{a['title']}\"{where}")
+    out = "Things you made or found recently (newest first):\n" + "\n".join(lines)
+    d = last_artifact("doc")
+    if d and d.get("text"):
+        out += f"\nBeginning of the latest document you wrote: {d['text'][:300]!r}"
+    return out
+
+
+def note_action(text):
+    """Goes into the conversation memory (never spoken), so follow-ups know what really happened."""
+    try:
+        if _capture is not None:
+            _capture.append(f"[{text}]")
+    except NameError:
+        pass
+
+
+_XML_BAD = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def write_docx_file(path, text):
+    """Writes a genuine .docx with only the standard library (used when Word itself isn't available)."""
+    import zipfile
+    from xml.sax.saxutils import escape
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    lines = _XML_BAD.sub("", text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    paras = "".join(f'<w:p><w:r><w:t xml:space="preserve">{escape(ln)}</w:t></w:r></w:p>' if ln.strip() else "<w:p/>"
+                    for ln in lines)
+    document = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="{W}"><w:body>{paras}'
+                '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" '
+                'w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>')
+    styles = (f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="{W}"><w:docDefaults><w:rPrDefault>'
+              '<w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:sz w:val="24"/></w:rPr></w:rPrDefault>'
+              '<w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault>'
+              '</w:docDefaults></w:styles>')
+    ctypes_xml = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/'
+                  'package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.'
+                  'relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/'
+                  'document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+                  '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.'
+                  'wordprocessingml.styles+xml"/></Types>')
+    rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/'
+            'package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+            'relationships/officeDocument" Target="word/document.xml"/></Relationships>')
+    drels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/'
+             'package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+             'relationships/styles" Target="styles.xml"/></Relationships>')
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("[Content_Types].xml", ctypes_xml)
+        z.writestr("_rels/.rels", rels)
+        z.writestr("word/document.xml", document)
+        z.writestr("word/styles.xml", styles)
+        z.writestr("word/_rels/document.xml.rels", drels)
+    return path
+
+
+def read_docx_text(path):
+    import zipfile
+    with zipfile.ZipFile(path) as z:
+        xml = z.read("word/document.xml").decode("utf-8", "ignore")
+    xml = re.sub(r"<w:p/>|</w:p>", "\n", xml)
+    return html.unescape(re.sub(r"<[^>]+>", "", xml)).strip()
+
+
+def read_file_text(path, limit=8000):
+    """Plain text of a file Ashie can read (txt/md/code/csv/docx/pdf). '' if it can't."""
+    ext = Path(path).suffix.lower()
+    try:
+        if ext == ".docx":
+            return read_docx_text(path)[:limit]
+        if ext == ".pdf":
+            for mod in ("pypdf", "PyPDF2"):
+                try:
+                    reader = __import__(mod).PdfReader(path)
+                    return "\n".join((p.extract_text() or "") for p in reader.pages[:12])[:limit]
+                except ImportError:
+                    continue
+            return ""
+        if ext in {".txt", ".md", ".py", ".js", ".json", ".csv", ".html", ".css", ".c", ".cpp", ".java", ".log", ".ini",
+                   ".ts", ".tex", ".xml", ".yml", ".yaml", ".rtf"}:
+            return Path(path).read_text(encoding="utf-8", errors="ignore")[:limit]
+    except Exception as e:
+        print("(couldn't read file)", e)
+    return ""
+
+
+def ensure_artifact_file(a):
+    """A real file on disk for this artifact (writes a .docx from its text if it only exists as text)."""
+    p = a.get("path") or ""
+    if p and os.path.exists(p):
+        return p
+    if a.get("text"):
+        p = str(DOCS / f"{safe_name(a.get('title', 'Ashie file'))}_{datetime.datetime.now():%Y%m%d_%H%M%S}.docx")
+        try:
+            write_docx_file(p, a["text"])
+            a["path"] = p
+            _save_artifacts()
+            return p
+        except Exception as e:
+            print("(couldn't write the file)", e)
+    return ""
+
+
+# =====================================================================
+#  FILE SEARCH  ("find my physics assignment pdf in downloads", "the resume I made last week on D drive")
+# =====================================================================
+TYPE_ALIASES = {
+    "word": "word", "docx": "word", "doc": "word", "pdf": "pdf", "excel": "excel", "xlsx": "excel", "spreadsheet": "excel",
+    "sheet": "excel", "csv": "excel", "powerpoint": "ppt", "ppt": "ppt", "pptx": "ppt", "presentation": "ppt", "slides": "ppt",
+    "slide": "ppt", "image": "image", "photo": "image", "picture": "image", "pic": "image", "screenshot": "image",
+    "png": "image", "jpg": "image", "jpeg": "image", "video": "video", "movie": "video", "clip": "video", "song": "audio",
+    "music": "audio", "audio": "audio", "recording": "audio", "txt": "text", "python": "code", "script": "code",
+    "code": "code", "zip": "zip", "archive": "zip", "folder": "folder", "directory": "folder"}
+TYPE_EXTS = {"word": {".docx", ".doc", ".rtf", ".odt"}, "pdf": {".pdf"}, "excel": {".xlsx", ".xls", ".xlsm", ".csv"},
+             "ppt": {".pptx", ".ppt"}, "image": {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".heic"},
+             "video": {".mp4", ".mkv", ".mov", ".avi", ".webm"}, "audio": {".mp3", ".wav", ".m4a", ".flac", ".ogg"},
+             "text": {".txt", ".md"}, "code": {".py", ".js", ".ts", ".java", ".c", ".cpp", ".html", ".css", ".ipynb"},
+             "zip": {".zip", ".rar", ".7z"}}
+GENERIC_DOC = TYPE_EXTS["word"] | TYPE_EXTS["pdf"] | TYPE_EXTS["text"]
+NAME_STOP = {"the", "a", "an", "my", "me", "of", "for", "to", "in", "on", "at", "from", "file", "files", "named", "called",
+             "about", "that", "this", "one", "with", "and", "i", "it", "is", "was", "had", "have", "made", "wrote", "saved",
+             "downloaded", "some", "something", "please", "find", "open", "search", "where", "which", "got", "get", "who",
+             "latest", "recent", "newest", "last", "new", "latest", "document", "documents", "folder"}
+RECENT_WORDS = {"latest", "recent", "newest", "last", "recently"}
+LOC_STOP = {"in", "on", "my", "the", "folder", "directory", "drive", "inside", "under", "from", "at", "computer", "pc",
+            "laptop", "somewhere", "a", "called", "named", "of", "system", "it", "there", "where", "is", "i", "saved", "kept"}
+SKIP_DIRS = {"windows", "program files", "program files (x86)", "programdata", "appdata", "$recycle.bin",
+             "system volume information", "node_modules", ".git", ".venv", "venv", "env", "__pycache__", "site-packages",
+             ".cache", ".npm", ".gradle", ".m2", "dist-packages", "recovery", "msocache", "perflogs", ".conda", ".nuget",
+             "anaconda3", "miniconda3", ".docker", ".ollama", ".vscode", "windows.old"}
+
+
+def _known_dirs():
+    h = HOME
+    names = {"desktop": "Desktop", "documents": "Documents", "downloads": "Downloads", "pictures": "Pictures",
+             "videos": "Videos", "music": "Music"}
+    bases = [h] + [p for p in h.glob("OneDrive*") if p.is_dir()]
+    out = {}
+    for key, folder in names.items():
+        out[key] = [b / folder for b in bases if (b / folder).is_dir()]
+    out["document"] = out["documents"]
+    out["download"] = out["downloads"]
+    out["photos"] = out["pictures"]
+    out["onedrive"] = [b for b in bases if b != h]
+    return out
+
+
+def _fixed_drives():
+    drives = []
+    try:
+        for p in psutil.disk_partitions(all=False):
+            if "cdrom" in (p.opts or "").lower() or not p.mountpoint:
+                continue
+            drives.append(Path(p.mountpoint))
+    except Exception:
+        pass
+    return drives
+
+
+def _walk(roots, deadline, want_dirs=False, seen=None):
+    seen = seen if seen is not None else set()
+    for root in roots:
+        if str(root) in seen:
+            continue                      # already covered (e.g. Downloads is inside the home folder)
+        seen.add(str(root))
+        stack = [str(root)]
+        while stack:
+            if time.time() > deadline:
+                return
+            d = stack.pop()
+            try:
+                it = os.scandir(d)
+            except OSError:
+                continue
+            with it:
+                for e in it:
+                    try:
+                        if e.is_dir(follow_symlinks=False):
+                            nm = e.name.lower()
+                            if nm in SKIP_DIRS or nm.startswith("$") or nm.startswith("."):
+                                continue
+                            if e.path in seen:
+                                continue
+                            seen.add(e.path)
+                            stack.append(e.path)
+                            if want_dirs:
+                                yield e
+                        elif not want_dirs and e.is_file(follow_symlinks=False):
+                            if e.name.startswith("~$") or e.name.lower().endswith((".tmp", ".lnk", ".ini", ".dll", ".sys")):
+                                continue
+                            yield e
+                    except OSError:
+                        continue
+
+
+def _words(s):
+    return re.findall(r"[a-z0-9]+", (s or "").lower())
+
+
+def _tok_match(t, stem_nosep, words):
+    if t in stem_nosep:
+        return 1.0
+    best = 0.0
+    for w in words:
+        if len(t) > 2 and len(w) > 2:
+            r = difflib.SequenceMatcher(None, t, w).ratio()
+            if r >= 0.8:
+                best = max(best, 0.9 * r)
+        if len(t) >= 4 and len(w) >= 4 and (w.startswith(t) or t.startswith(w)):
+            best = max(best, 0.8)
+    return best
+
+
+def parse_file_query(hint, ftype=""):
+    """-> (name tokens, set of extensions or None, wants_folder, wants_recent)"""
+    words = _words(hint) + _words(ftype)
+    exts, tokens, folder = set(), [], False
+    recent = any(w in RECENT_WORDS for w in words)
+    for w in words:
+        if w in TYPE_ALIASES:
+            k = TYPE_ALIASES[w]
+            if k == "folder":
+                folder = True
+            else:
+                exts |= TYPE_EXTS[k]
+            continue
+        if w in ("document", "documents"):
+            exts |= GENERIC_DOC
+            continue
+        if w in NAME_STOP or w in RECENT_WORDS:
+            continue
+        tokens.append(w)
+    return list(dict.fromkeys(tokens)), (exts or None), folder, recent
+
+
+def location_roots(location):
+    """Turns 'downloads', 'd drive', 'the college folder on D drive' into folders to search. ([], hints) if unknown."""
+    loc = (location or "").lower()
+    if not loc.strip():
+        return [], []
+    known = _known_dirs()
+    roots, consumed = [], set()
+    for key, paths in known.items():
+        if re.search(r"\b" + re.escape(key) + r"\b", loc):
+            roots += [p for p in paths if p.exists()]
+            consumed |= set(key.split())
+    for m in re.finditer(r"\b([a-z])\s*(?:drive|:)", loc):
+        dp = Path(m.group(1).upper() + ":\\")
+        if dp.exists():
+            roots.append(dp)
+        consumed |= {m.group(1), "drive"}
+    hints = [w for w in _words(loc) if w not in consumed and w not in LOC_STOP]
+    if hints:
+        base = roots or ([HOME] + _fixed_drives())
+        found = []
+        deadline = time.time() + 8
+        for e in _walk(base, deadline, want_dirs=True):
+            nw = _words(e.name)
+            nosep = "".join(nw)
+            ok = [_tok_match(h, nosep, nw) >= 0.8 for h in hints]
+            if ok and all(ok):
+                found.append(Path(e.path))
+                if len(found) >= 12:
+                    break
+        if found:
+            return found, hints
+        return roots, hints
+    return roots, []
+
+
+def default_roots():
+    roots = []
+    for key in ("desktop", "documents", "downloads", "pictures", "videos", "music"):
+        roots += _known_dirs().get(key, [])
+    roots.append(HOME)
+    sysdrive = Path(os.environ.get("SystemDrive", "C:") + "\\")
+    roots += [d for d in _fixed_drives() if str(d).upper() != str(sysdrive).upper()]
+    out, seen = [], set()
+    for r in roots:
+        if str(r) not in seen:
+            seen.add(str(r))
+            out.append(r)
+    return out
+
+
+def search_files(hint, location="", ftype="", seconds=None, limit=5):
+    """Fuzzy search by name hint + optional extension/location. Newest-first when 'latest' is said. -> list of dicts."""
+    seconds = seconds or FILE_SEARCH_SECONDS
+    tokens, exts, want_folder, recent = parse_file_query(hint, ftype)
+    roots, loc_hints = location_roots(location)
+    roots = roots or default_roots()
+    deadline = time.time() + seconds
+    now = time.time()
+    cands, textlike, seen_dirs = [], [], set()
+    for e in _walk(roots, deadline, want_dirs=want_folder, seen=seen_dirs):
+        try:
+            name = e.name
+            stem = name.rsplit(".", 1)[0] if (not want_folder and "." in name) else name
+            ext = Path(name).suffix.lower()
+            if exts and not want_folder and ext not in exts:
+                continue
+            nw = _words(stem)
+            nosep = "".join(nw)
+            pw = _words(" ".join(Path(e.path).parent.parts[-3:]))
+            if tokens:
+                per = []
+                for t in tokens:
+                    nm = _tok_match(t, nosep, nw)
+                    pm = 0.5 * _tok_match(t, "".join(pw), pw)
+                    per.append(max(nm, pm))
+                score = sum(per) / len(tokens)
+                if score < 0.5:
+                    if ext in {".txt", ".md", ".py", ".csv", ".json", ".docx"} and len(textlike) < 4000:
+                        textlike.append(e.path)
+                    continue
+            else:
+                score = 0.5
+            mt = e.stat().st_mtime
+            age = (now - mt) / 86400
+            score += 0.06 if age <= 3 else (0.03 if age <= 30 else 0)
+            cands.append({"score": min(score, 1.2), "path": e.path, "mtime": mt, "why": "name"})
+        except OSError:
+            continue
+    best = max([c["score"] for c in cands], default=0)
+    # nothing convincing by name -> look inside small text-like files for the words
+    if tokens and best < 0.6 and textlike and time.time() < deadline + 8 and not want_folder:
+        stop_at = time.time() + 8
+        for p in textlike:
+            if time.time() > stop_at:
+                break
+            try:
+                if os.path.getsize(p) > 1_500_000:
+                    continue
+                body = (read_docx_text(p) if p.lower().endswith(".docx") else
+                        Path(p).read_text(encoding="utf-8", errors="ignore")).lower()
+                hit = sum(1 for t in tokens if t in body) / len(tokens)
+                if hit >= 0.6:
+                    cands.append({"score": 0.55 + 0.3 * hit, "path": p, "mtime": os.path.getmtime(p), "why": "content"})
+            except Exception:
+                continue
+    if recent and cands:
+        top = max(c["score"] for c in cands)
+        cands = [c for c in cands if c["score"] >= top - 0.25]
+        cands.sort(key=lambda c: -c["mtime"])
+    else:
+        cands.sort(key=lambda c: (-c["score"], -c["mtime"]))
+    return cands[:limit]
+
+
+_ORD = {"one": 1, "first": 1, "1": 1, "two": 2, "second": 2, "2": 2, "to": 2, "three": 3, "third": 3, "3": 3,
+        "four": 4, "fourth": 4, "4": 4, "five": 5, "fifth": 5, "5": 5}
+
+
+def _pick_number(answer, n):
+    for w in re.findall(r"[a-z0-9]+", (answer or "").lower()):
+        if w in ("none", "cancel", "neither", "nothing", "no", "nope", "stop"):
+            return 0
+        if w in _ORD and _ORD[w] <= n:
+            return _ORD[w]
+    return 0
+
+
+def find_file_interactive(hint, location="", ftype="", say=True):
+    """Finds one file for the user, asking which if it's unclear. Returns the path or None (user already told)."""
+    if not (hint or "").strip() and not (location or "").strip() and not ftype:
+        hint = ask("Which file? Tell me a bit about its name and where it is.")
+        if not hint:
+            return None
+    if say:
+        speak("Searching your computer.")
+    res = search_files(hint, location, ftype)
+    if not res:
+        speak("I couldn't find a match. Try giving me part of the file name, or tell me which folder or drive it's in.")
+        return None
+    top = res[0]
+    if len(res) == 1 or top["score"] - res[1]["score"] >= 0.15 or top["score"] >= 0.97:
+        return top["path"]
+    opts = res[:3]
+    desc = ". ".join(f"{i + 1}: {Path(o['path']).name}, in {Path(o['path']).parent.name or 'the drive root'}"
+                     for i, o in enumerate(opts))
+    n = _pick_number(ask(f"I found a few. {desc}. Which one?"), len(opts))
+    if not n:
+        speak("Okay, I won't pick any of them.")
+        return None
+    return opts[n - 1]["path"]
+
+
+def skill_find_file(hint="", location="", ftype="", action="open", raw=""):
+    p = find_file_interactive(f"{hint}", location, ftype)
+    if not p:
+        return
+    name = Path(p).name
+    remember_artifact("file", name, p)
+    note_action(f"found file {name} at {p}")
+    action = (action or "open").lower()
+    try:
+        if action in ("folder", "show", "reveal", "location", "where"):
+            subprocess.Popen(f'explorer /select,"{p}"')
+            speak(f"It's in {Path(p).parent.name or 'the drive root'}. I've shown it in the folder.")
+        elif action == "read":
+            txt = read_file_text(p)
+            if not txt.strip():
+                os.startfile(p)
+                return speak(f"I can't read that kind of file myself, so I opened {name} for you.")
+            out = llm([{"role": "system", "content": persona()},
+                       {"role": "user", "content": f"{USER_NAME} asked: {raw or 'what is in this file'}\n\nFile {name}:\n{txt[:6000]}\n\n"
+                                                   "Answer in 2-4 spoken sentences."}], max_tokens=260, ctx=4096)
+            speak(out or f"I found {name} but couldn't summarise it.")
+        else:
+            os.startfile(p)
+            speak(f"Opening {name}.")
+    except Exception as e:
+        print("(open error)", e)
+        speak(f"I found {name} but couldn't open it.")
+
+
+# =====================================================================
+#  EMAIL ATTACHMENTS (real ones, verified - she never says "attached" unless it is)
+# =====================================================================
+ATTACH_WORDS = re.compile(r"\b(attach(?:ed|ing|ment|ments)?|send (?:it|that|this|the (?:letter|document|doc|file|essay|report|"
+                          r"resume|application|assignment))|what you (?:wrote|made)|(?:email|mail|gmail) (?:it|that))\b", re.I)
+GENERIC_SEND = re.compile(r"^(?:please\s+)?(?:send|email|mail|attach|forward)?\s*(?:it|that|this|the (?:letter|document|doc|file)|"
+                          r"what you (?:wrote|made))?(?:\s+(?:over|to\s+.*|on gmail|in gmail|as an attachment|with it attached))?\W*$", re.I)
+_FILE_DIALOG_TITLES = ("open", "upload", "insert file", "choose file", "select file", "attach", "file upload")
+
+
+def _ocr_blob():
+    try:
+        return " | ".join(t.lower() for t, *_ in screen_ocr()) if OCR_OK else ""
+    except Exception:
+        return ""
+
+
+def _norm_alnum(s):
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def _file_dialog_open(timeout=12):
+    end = time.time() + timeout
+    while time.time() < end:
+        t = active_title().lower().strip()
+        if t and any(t == k or t.startswith(k) for k in _FILE_DIALOG_TITLES):
+            return True
+        time.sleep(0.3)
+    return False
+
+
+def _pick_in_file_dialog(path):
+    time.sleep(0.6)
+    pyperclip.copy(path)
+    pyautogui.hotkey("ctrl", "v")
+    time.sleep(0.4)
+    pyautogui.press("enter")
+
+
+def _wait_attachment(path, timeout=40):
+    """'ok' once the file name shows on screen and no upload is running, 'unverified' without OCR, else 'failed'."""
+    if not OCR_OK:
+        time.sleep(6)
+        return "unverified"
+    stem = _norm_alnum(Path(path).stem)[:12]
+    name = _norm_alnum(Path(path).name)[:14]
+    end = time.time() + timeout
+    seen = False
+    while time.time() < end:
+        blob = _norm_alnum(_ocr_blob())
+        if stem and (stem in blob or name in blob):
+            seen = True
+            if "uploading" not in blob and "attaching" not in blob:
+                time.sleep(1.5)
+                return "ok"
+        time.sleep(1.5)
+    return "ok" if seen else "failed"
+
+
+def gmail_attach(path):
+    """Attach a file to the Gmail compose window that is open in front. -> 'ok' | 'unverified' | 'failed'."""
+    path = str(Path(path).resolve())
+    if not os.path.exists(path):
+        return "failed"
+    # method 1: the paperclip button (Gmail calls it "Attach files")
+    clicked = False
+    for _ in range(2):
+        for lab in ("attach files", "attach file"):
+            try:
+                if uia_click(lab):
+                    clicked = True
+                    break
+            except Exception:
+                pass
+        if clicked:
+            break
+        time.sleep(1.2)
+    if clicked and _file_dialog_open():
+        _pick_in_file_dialog(path)
+        st = _wait_attachment(path)
+        if st != "failed":
+            return st
+    # method 2: put the file on the clipboard and paste it into the message
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-Command", f'Set-Clipboard -Path "{path}"'], timeout=15,
+                       capture_output=True)
+        try:
+            uia_click("message body")
+        except Exception:
+            pass
+        time.sleep(0.4)
+        pyautogui.hotkey("ctrl", "v")
+        return _wait_attachment(path, timeout=25)
+    except Exception as e:
+        print("(clipboard attach failed)", e)
+    return "failed"
+
+
+def _gmail_creds():
+    addr = (GMAIL_ADDRESS or os.environ.get("GMAIL_ADDRESS", "")).strip()
+    pw = (GMAIL_APP_PASSWORD or os.environ.get("GMAIL_APP_PASSWORD", "")).strip()
+    f = DATA / "gmail_app_password.txt"
+    if not pw and f.exists():
+        pw = f.read_text(encoding="utf-8").strip()
+    pw = pw.replace(" ", "")
+    return (addr, pw) if addr and pw else None
+
+
+def build_mime(sender, to, subject, body, attachments):
+    import mimetypes
+    from email.message import EmailMessage
+    msg = EmailMessage()
+    msg["From"], msg["To"], msg["Subject"] = sender, to, subject
+    msg.set_content(body)
+    for p in attachments:
+        ctype, _ = mimetypes.guess_type(p)
+        main, sub = (ctype or "application/octet-stream").split("/", 1)
+        msg.add_attachment(Path(p).read_bytes(), maintype=main, subtype=sub, filename=Path(p).name)
+    return msg
+
+
+def send_smtp(addr, subject, body, attachments):
+    import smtplib
+    user, pw = _gmail_creds()
+    msg = build_mime(user, addr, subject, body, attachments)
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as s:
+        s.login(user, pw)
+        s.send_message(msg)
+
+
+def _gmail_open_compose(addr, subj, body):
+    short = len(body) <= 1400
+    url = ("https://mail.google.com/mail/?view=cm&fs=1&to=" + urllib.parse.quote(addr) + "&su=" + urllib.parse.quote(subj) +
+           (("&body=" + urllib.parse.quote(body)) if short else ""))
+    open_chrome(url)
+    warned, ready = False, False
+    end = time.time() + 90
+    while time.time() < end:
+        blob = _ocr_blob() if OCR_OK else "send subject"
+        if "sign in" in blob and not warned:
+            speak("Gmail needs you to sign in. I'll wait.")
+            warned = True
+        if "send" in blob and ("subject" in blob or "new message" in blob or subj[:10].lower() in blob):
+            ready = True
+            break
+        time.sleep(1)
+    time.sleep(1.5)
+    if ready and not short:
+        pyperclip.copy(body)
+        pyautogui.hotkey("ctrl", "v")      # long text goes in through the clipboard
+        time.sleep(0.6)
+    return ready
+
+
+def _send_and_verify():
+    pyautogui.hotkey("ctrl", "enter")
+    time.sleep(3)
+    sent = OCR_OK and any("message sent" in t.lower() or t.lower().strip() == "sent" for t, *_ in screen_ocr())
+    return bool(sent) or not OCR_OK
+
+
+def _deliver_email(addr, subj, body, att_path, fallback_text):
+    fname = Path(att_path).name if att_path else ""
+    spoken_to = spell_email(addr)
+    # 1) straight from Gmail with an app password: no browser, real attachments, most reliable
+    if EMAIL_METHOD != "outlook" and _gmail_creds():
+        if not confirm(f"I'll send this to {spoken_to}, subject: {subj}." + (f" {fname} will be attached." if fname else "")):
+            return False
+        try:
+            send_smtp(addr, subj, body, [att_path] if att_path else [])
+            speak("Email sent" + (f", with {fname} attached." if fname else "."))
+            return True
+        except Exception as e:
+            print("(SMTP failed)", e)
+            speak("Sending straight through Gmail failed, so I'll do it in the browser instead.")
+    # 2) desktop Outlook
+    if EMAIL_METHOD == "outlook":
+        try:
+            import win32com.client
+            ol = win32com.client.Dispatch("Outlook.Application")
+            mail = ol.CreateItem(0)
+            mail.To, mail.Subject, mail.Body = addr, subj, body
+            if att_path:
+                mail.Attachments.Add(att_path)
+            mail.Display()
+            if confirm(f"Send this email to {spoken_to}, subject: {subj}." + (f" {fname} is attached." if fname else "")):
+                mail.Send()
+                speak("Email sent!")
+                return True
+            return False
+        except Exception as e:
+            print("(Outlook failed, falling back to Gmail)", e)
+    # 3) Gmail in Chrome
+    ready = _gmail_open_compose(addr, subj, body)
+    status = ""
+    if att_path:
+        status = gmail_attach(att_path) if ready else "failed"
+        if status == "failed":
+            speak(f"I couldn't attach {fname} automatically.")
+            if fallback_text and confirm("Shall I put the full text in the body of the email instead?"):
+                pyautogui.hotkey("ctrl", "w")
+                time.sleep(1)
+                ready = _gmail_open_compose(addr, subj, fallback_text)
+                att_path, fname, status = "", "", ""
+            else:
+                speak(f"I've left the email open. Your file is saved as {fname} in your Ashie documents folder, "
+                      "so you can attach it yourself.")
+                return False
+    desc = f"Your email to {spoken_to} is ready. Subject: {subj}."
+    if att_path:
+        desc += f" {fname} is attached." if status == "ok" else f" I added {fname}, but I couldn't double-check it."
+    if confirm(desc + " Should I send it?"):
+        ok = _send_and_verify()
+        speak("Email sent!" if ok else "I pressed send. Please glance at the screen to be sure.")
+        return ok
+    return False
+
+
+def skill_attach(file_hint="", raw=""):
+    """'attach it to the mail' - adds a file to the email that is open on screen."""
+    if (file_hint or "").strip():
+        path = find_file_interactive(file_hint)
+        if not path:
+            return
+        remember_artifact("file", Path(path).name, path)
+    else:
+        a = last_artifact("doc", "notes", "file", "explanation")
+        path = ensure_artifact_file(a) if a else ""
+        if not path:
+            return speak("I haven't written or found any file yet. Tell me which file to attach, or ask me to write one.")
+    title = active_title().lower()
+    if not any(k in title for k in ("gmail", "compose", "mail", "outlook", "inbox", "message")):
+        return speak("I don't see an email open on screen. Open the draft first, or tell me to email it and I'll do it all.")
+    speak(f"Attaching {Path(path).name}.")
+    st = gmail_attach(path)
+    note_action(f"attach {Path(path).name}: {st}")
+    if st == "ok":
+        speak("Attached. I can see it in the email.")
+    elif st == "unverified":
+        speak("I attached it, but I can't confirm it on screen, so please check.")
+    else:
+        speak(f"I couldn't attach it. The file is {Path(path).name} in {Path(path).parent.name}, so you can add it with the paperclip.")
+
+
+def skill_email(to, subject, instructions, use_word=False, attach_last=False, file_hint="", paste=False, raw=""):
+    to = (to or "").strip()
+    info = find_contact(to) if to else None
+    addr = (info or {}).get("email", "")
+    if not addr and to:
+        cand = spoken_to_email(to)
+        addr = cand if valid_email(cand) else ""
+    for _ in range(2):
+        if addr:
+            break
+        a = ask("What's the email address? You can say it like name at gmail dot com.")
+        if not a:
+            return speak("Okay, I'll skip the email.")
+        cand = spoken_to_email(a)
+        if valid_email(cand):
+            addr = cand
+        else:
+            info = find_contact(a)
+            addr = (info or {}).get("email", "")
+    if not addr:
+        return speak("I couldn't get a valid email address. Add the person to CONTACTS to make it easy.")
+    instructions = (instructions or "").strip()
+    raw = raw or ""
+
+    # ---- is there a document / file that should go with this mail?
+    doc, att_path = None, ""
+    if file_hint:
+        att_path = find_file_interactive(file_hint)
+        if not att_path:
+            return
+        remember_artifact("file", Path(att_path).name, att_path)
+        doc = {"title": Path(att_path).stem.replace("_", " "), "text": "", "path": att_path}
+    elif attach_last or paste or ATTACH_WORDS.search(raw) or ATTACH_WORDS.search(instructions):
+        doc = last_artifact("doc", "notes", "file", "explanation")
+        if doc:
+            att_path = ensure_artifact_file(doc)
+        elif re.search(r"\battach|\bsend (?:it|that|this)\b", raw + " " + instructions, re.I):
+            return speak("I haven't written or found anything to send yet. Ask me to write it first, or tell me which file.")
+    title = (doc or {}).get("title", "")
+    doc_text = (doc or {}).get("text", "")
+    if att_path and not doc_text:
+        doc_text = read_file_text(att_path, 6000)
+
+    if doc and paste and doc_text:
+        subj, body, att_path = (subject or title or "Letter"), doc_text, ""
+    else:
+        if not instructions and not att_path:
+            instructions = ask("What should the email say?")
+            if not instructions:
+                return speak("Okay, never mind.")
+        speak("Drafting your email.")
+        about = instructions
+        if att_path:
+            extra = "" if (not instructions or GENERIC_SEND.match(instructions)) else instructions
+            about = (f"A short cover note. The file '{Path(att_path).name}' ({title}) is attached to this email. " + extra).strip()
+        subj, body = draft_email(about, subject or title, to if "@" not in to else "")
+        if use_word and not att_path:
+            p = write_in_word(f"Subject: {subj}\n\n{body}", "Email " + subj)
+            speak("I wrote it in Word." + (" Saved in your Ashie documents folder." if p else ""))
+
+    sent = _deliver_email(addr, subj, body, att_path, doc_text if att_path else "")
+    if sent:
+        remember_artifact("email", subj, text=body)
+        note_action(f"emailed {addr}, subject '{subj}'" + (f", with attachment {Path(att_path).name}" if att_path else ""))
+    else:
+        note_action(f"email to {addr} prepared but not sent")
+
+
+# =====================================================================
+#  CHATBOT WEBSITES: ask Claude / ChatGPT / DeepSeek / Gemini..., read the reply (scrolling if needed),
+#  then answer, explain, make notes, or carry out the steps it gives
+# =====================================================================
+AI_SITES = {
+    "claude": {"title": "Claude", "url": "https://claude.ai/new", "names": ("claude",),
+               "inputs": ("how can claude help", "write your prompt", "reply to claude", "message claude", "talk to claude")},
+    "chatgpt": {"title": "ChatGPT", "url": "https://chatgpt.com/", "names": ("chatgpt", "chat gpt", "gpt", "openai"),
+                "inputs": ("ask anything", "message chatgpt")},
+    "deepseek": {"title": "DeepSeek", "url": "https://chat.deepseek.com/", "names": ("deepseek", "deep seek", "deepsek"),
+                 "inputs": ("message deepseek", "ask anything")},
+    "gemini": {"title": "Gemini", "url": "https://gemini.google.com/app", "names": ("gemini", "bard"),
+               "inputs": ("enter a prompt here", "ask gemini")},
+    "perplexity": {"title": "Perplexity", "url": "https://www.perplexity.ai/", "names": ("perplexity",),
+                   "inputs": ("ask anything", "ask a follow-up")},
+    "copilot": {"title": "Copilot", "url": "https://copilot.microsoft.com/", "names": ("copilot",),
+                "inputs": ("message copilot", "ask me anything")},
+    "grok": {"title": "Grok", "url": "https://grok.com/", "names": ("grok",),
+             "inputs": ("what do you want to know", "ask anything")},
+    "qwen": {"title": "Qwen", "url": "https://chat.qwen.ai/", "names": ("qwen", "quen"),
+             "inputs": ("how can i help you", "message qwen")},
+    "mistral": {"title": "Le Chat", "url": "https://chat.mistral.ai/chat", "names": ("mistral", "le chat"),
+                "inputs": ("ask le chat", "ask anything")},
+}
+LOGIN_HINTS = ("log in", "login", "sign in", "sign up", "continue with google", "create account", "welcome back")
+BUSY_HINTS = ("stop generating", "stop response", "stop streaming", "is thinking", "thinking...", "thinking…",
+              "generating", "searching the web", "researching")
+NOISE_LINES = {"copy", "retry", "share", "edit", "regenerate", "good response", "bad response", "like", "dislike", "read aloud",
+               "show more", "new chat", "cancel", "send", "copy code", "download", "listen", "sources", "thinking",
+               "deepthink", "search", "ask anything"}
+FOOTER_HINTS = ("can make mistakes", "ai-generated", "for reference only", "double-check", "verify important",
+                "check important info")
+DANGEROUS = re.compile(r"(rm\s+-rf|del\s+/[sfq]|rd\s+/s|format\s+[a-z]:|diskpart|reg\s+delete|shutdown\s|cipher\s+/w|bcdedit|"
+                       r"vssadmin|net\s+user|takeown|powershell.*-enc|invoke-expression|\biex\b|curl[^|\n]*\|\s*(?:sh|bash)|"
+                       r"remove-item.*-recurse|wipe|erase the (?:disk|drive))", re.I)
+
+
+def ai_site_from(text):
+    t = (text or "").lower()
+    if re.search(r"\b(?:ask|tell|use|on|with|in|using|open)\s+(?:the\s+)?cloud(?:\s+ai)?\b", t):
+        return "claude"          # speech-to-text often hears "Claude" as "cloud"
+    for key, v in AI_SITES.items():
+        if any(re.search(r"\b" + re.escape(n) + r"\b", t) for n in v["names"]):
+            return key
+    return None
+
+
+def _ai_wait_ready(site, timeout=60):
+    info = AI_SITES[site]
+    if not OCR_OK:
+        time.sleep(7)
+        return True
+    end, warned = time.time() + timeout, False
+    while time.time() < end:
+        blob = _ocr_blob()
+        if any(lab in blob for lab in info["inputs"]):
+            return True
+        if any(h in blob for h in LOGIN_HINTS) and not warned:
+            speak(f"{info['title']} wants you to log in. I'll wait a bit.")
+            warned = True
+            end = max(end, time.time() + 90)
+        time.sleep(1.2)
+    return False
+
+
+def _ai_submit(site, q):
+    info = AI_SITES[site]
+    for lab in info["inputs"]:
+        try:
+            if ocr_click(lab):
+                break
+        except Exception:
+            pass
+    time.sleep(0.3)
+    before = _norm_alnum(_ocr_blob())
+    pyperclip.copy(q)
+    pyautogui.hotkey("ctrl", "v")
+    time.sleep(0.7)
+    pyautogui.press("enter")
+    time.sleep(3)
+    if OCR_OK and _norm_alnum(_ocr_blob()) == before:      # nothing changed: Enter didn't send it
+        for lab in ("send message", "send", "submit"):
+            try:
+                if uia_click(lab):
+                    return
+            except Exception:
+                pass
+        pyautogui.press("enter")
+
+
+def _ai_wait_answer(max_wait=None):
+    """Waits until the page stops changing and no 'stop generating' style indicator is visible."""
+    max_wait = max_wait or AI_WAIT_SECONDS
+    if not OCR_OK:
+        time.sleep(min(max_wait, 25))
+        return True
+    t0, last, stable = time.time(), "", 0
+    time.sleep(4)
+    while time.time() - t0 < max_wait:
+        blob = _ocr_blob()
+        sig = _norm_alnum(blob)[-700:]
+        busy = any(h in blob for h in BUSY_HINTS)
+        stable = stable + 1 if (sig == last and not busy) else 0
+        last = sig
+        if stable >= 3:
+            return True
+        time.sleep(2)
+    return False
+
+
+def _tail_pattern(q):
+    words = re.sub(r"\s+", " ", q.strip())[-40:].split()
+    words = words[1:] if len(words) > 3 else words          # first word of the tail may be cut in half
+    return r"\s+".join(re.escape(w) for w in words) if words else ""
+
+
+def ai_clean(text, q):
+    """Keeps just the reply that came after our question, minus page chrome."""
+    text = (text or "").replace("\r", "")
+    pat = _tail_pattern(q)
+    if pat:
+        hits = list(re.finditer(pat, text))
+        if hits:
+            text = text[hits[-1].end():]
+    lines = [ln.rstrip() for ln in text.split("\n")]
+    lines = [ln for ln in lines if ln.strip().lower() not in NOISE_LINES]
+    while lines and (not lines[-1].strip() or any(h in lines[-1].lower() for h in FOOTER_HINTS)):
+        lines.pop()
+    out = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    return out[:14000]
+
+
+def _merge_pages(pages):
+    """Joins OCR'd pages (top to bottom), dropping the lines repeated where consecutive pages overlap."""
+    acc = []
+    norm = lambda s: re.sub(r"\W+", "", s.lower())
+    for page in pages:
+        lines = [l for l in page.split("\n") if l.strip()]
+        k = 0
+        for n in range(min(len(acc), len(lines), 14), 0, -1):
+            if all(difflib.SequenceMatcher(None, norm(a), norm(b)).ratio() >= 0.9 for a, b in zip(acc[-n:], lines[:n])):
+                k = n
+                break
+        acc += lines[k:]
+    return "\n".join(acc)
+
+
+def _ai_read_scrolling(q, max_pages=12):
+    """OCR fallback: scroll up until our own question shows, then stitch the pages back together."""
+    pages, last_sig = [], None
+    pat = _tail_pattern(q)
+    for _ in range(max_pages):
+        txt = ocr_screen_text()
+        pages.append(txt)
+        sig = _norm_alnum(txt)[:300]
+        if (pat and re.search(pat, txt)) or sig == last_sig:
+            break
+        last_sig = sig
+        pyautogui.scroll(500)
+        time.sleep(0.8)
+    return ai_clean(_merge_pages(list(reversed(pages))), q)
+
+
+def _ai_read(q):
+    """Select-all + copy gives the exact text (maths included); OCR + scrolling is the fallback."""
+    text = ""
+    try:
+        W, H = pyautogui.size()
+        pyautogui.click(int(W * 0.5), int(H * 0.5))          # leave the input box so Ctrl+A selects the page
+        time.sleep(0.3)
+        pyperclip.copy("")
+        pyautogui.hotkey("ctrl", "a")
+        time.sleep(0.3)
+        pyautogui.hotkey("ctrl", "c")
+        time.sleep(0.7)
+        text = pyperclip.paste() or ""
+        pyautogui.click(int(W * 0.5), int(H * 0.5))          # drop the selection
+    except Exception as e:
+        print("(copy read failed)", e)
+    ans = ai_clean(text, q) if text else ""
+    if len(ans) < 40 and OCR_OK:
+        print("(copy gave too little; reading the page with OCR and scrolling)")
+        ans = _ai_read_scrolling(q)
+    return ans
+
+
+def _ai_explain(ans, q, mode, notes=False):
+    long = mode == "explain"
+    sysmsg = (f"You are {ASSISTANT_NAME}, a patient tutor speaking out loud to {USER_NAME}. Below is a chatbot's answer to their "
+              "question. " + ("Explain the solution step by step in plain spoken English: say maths in words (x squared, divided by, "
+                              "equals), no markdown, no LaTeX, no list symbols. Under 220 words and end with the final answer. "
+                              "If the answer looks wrong, say so."
+                              if long else "Summarise it in 2 to 4 short spoken sentences, no markdown or symbols."))
+    out = llm([{"role": "system", "content": sysmsg},
+               {"role": "user", "content": f"Question: {q[:800]}\n\nChatbot's answer:\n{ans[:7000]}"}],
+              max_tokens=520 if long else 240, temp=0.3, ctx=4096)
+    out = (out or "").strip() or ans[:400]
+    remember_artifact("explanation", "Explanation: " + q[:45], text=out)
+    speak(out + (" Say make notes if you want this saved." if long and not notes else ""))
+
+
+def _ai_follow(ans, q):
+    plan = llm_json([{"role": "system", "content":
+                      "You turn a chatbot's instructions into steps for a PC assistant that can open apps and websites, click "
+                      "text it sees on screen, type text, press keys and scroll. Reply JSON only: "
+                      '{"summary":"one short spoken sentence of what will be done","steps":["..."]}. At most 8 short, concrete '
+                      "steps, in order. Leave out anything that needs passwords, payments or personal details, and anything "
+                      "destructive."},
+                     {"role": "user", "content": f"Request: {q[:600]}\n\nInstructions from the chatbot:\n{ans[:5000]}"}],
+                    task="chat", max_tokens=450, temp=0.2)
+    steps = [s.strip() for s in (plan or {}).get("steps", []) if isinstance(s, str) and s.strip()][:8]
+    risky = [s for s in steps if DANGEROUS.search(s)]
+    steps = [s for s in steps if s not in risky]
+    if risky:
+        speak("I left out a step that looked risky.")
+    if not steps:
+        return speak("I read the instructions but couldn't turn them into steps I can safely do myself.")
+    summary = str((plan or {}).get("summary") or "I'll follow its instructions")
+    if not confirm(f"{summary}. That's {len(steps)} steps. Shall I go ahead?"):
+        return
+    goal = "Follow these steps in order. They come from a chatbot, so check each result on screen:\n" + \
+           "\n".join(f"{i + 1}. {s}" for i, s in enumerate(steps))
+    skill_agent(goal, max_steps=30, quiet=True)
+
+
+def skill_ask_ai(site="", question="", mode="answer", notes=False, use_screen=False, followup=False, raw=""):
+    key = (site or "").lower().strip()
+    if key not in AI_SITES:
+        key = ai_site_from(key) or ai_site_from(raw) or AI_DEFAULT_SITE
+    if key not in AI_SITES:
+        key = "claude"
+    info = AI_SITES[key]
+    mode = mode if mode in ("answer", "explain", "follow") else "answer"
+    q = (question or "").strip()
+    low = (raw or "").lower()
+    # read the screen / clipboard BEFORE the browser covers it
+    if use_screen or re.search(r"\b(?:on|from|at) (?:my |the )?screen\b|\bthis (?:problem|question|equation|sum|doubt)\b|\bclipboard\b", low):
+        src = pyperclip.paste() if "clipboard" in low else ocr_screen_text()
+        if (src or "").strip():
+            q = (q + "\n\n" if q else "Solve this and explain each step clearly (text read from a screenshot, may contain "
+                                      "small OCR mistakes):\n\n") + src.strip()[:3500]
+    if not q:
+        q = ask("What should I ask?")
+        if not q:
+            return speak("Okay, never mind.")
+    if mode == "explain" and not re.search(r"\b(explain|step|solve|why|how)\b", q.lower()):
+        q = "Solve this step by step and explain each step clearly: " + q
+    if mode == "follow" and not re.search(r"\b(step|instructions?|numbered)\b", q.lower()):
+        q += "\n\nGive me short numbered step-by-step instructions I can follow on a Windows PC."
+    speak(f"Asking {info['title']}.")
+    if not followup:
+        open_chrome(info["url"])
+        time.sleep(2)
+        if not _ai_wait_ready(key):
+            return speak(f"{info['title']} didn't load properly, or I couldn't find its message box.")
+    _ai_submit(key, q)
+    speak("Waiting for the answer.")
+    if not _ai_wait_answer():
+        speak("It's taking long, so I'll read what's there.")
+    ans = _ai_read(q)
+    if len(ans) < 20:
+        return speak("I couldn't read the reply from the page.")
+    remember_artifact("ai_answer", f"{info['title']}: {q[:50]}", text=ans)
+    note_action(f"asked {info['title']}: {q[:120]} (mode {mode}); got a {len(ans)}-character reply")
+    if mode == "follow":
+        _ai_follow(ans, q)
+    else:
+        _ai_explain(ans, q, mode, notes)
+    if notes:
+        skill_make_notes("", source="last", raw=raw)
+
+
+# =====================================================================
+#  NOTES: "make notes on that", "make notes on photosynthesis", "make notes from my screen"
+# =====================================================================
+def skill_make_notes(topic="", source="", in_word=False, raw=""):
+    topic = (topic or "").strip()
+    src = (source or "").lower()
+    low = (raw or "").lower()
+    generic = bool(re.fullmatch(r"(?:that|this|it|the (?:answer|explanation|solution|above|previous)|what (?:you|it|he) (?:said|explained))?",
+                                topic.lower()))
+    material, label = "", ""
+    if src == "screen" or (generic and re.search(r"\b(?:screen|page|window)\b", low)):
+        material, label = ocr_screen_text(), "screen"
+    elif generic or src == "last":
+        a = last_artifact("ai_answer", "explanation", "doc")
+        if a:
+            material, label = a.get("text", ""), a.get("title", "")
+        elif HISTORY:
+            material, label = list(HISTORY)[-1].get("assistant", ""), "previous answer"
+    if not material.strip() and not topic:
+        topic = ask("Notes on what?")
+        if not topic:
+            return speak("Okay, never mind.")
+    if material.strip():
+        task = f"Turn this into clear, well-organised study notes:\n\n{material[:7000]}"
+    else:
+        extra = ""
+        if re.search(r"\b(latest|current|recent|news|2025|2026|today)\b", topic.lower()):
+            res = web_search(topic, n=4)
+            extra = "\n\nWeb results:\n" + "\n".join(f"- {r.get('title', '')}: {r.get('body', '')}" for r in res) if res else ""
+        task = f"Write concise, accurate study notes on: {topic}{extra}"
+    speak("Making your notes.")
+    out = llm([{"role": "system", "content": f"You write study notes for {USER_NAME}. Plain text only, no markdown symbols. "
+                                              "First line is a short title. Then headings in CAPITAL LETTERS and bullet points "
+                                              "starting with '- '. Write formulas in plain text. Keep it under 350 words, "
+                                              "accurate and easy to revise from."},
+               {"role": "user", "content": task}], max_tokens=900, temp=0.3, ctx=4096)
+    if not out:
+        return speak("I couldn't reach my brain to make the notes.")
+    out = out.strip()
+    title = re.sub(r"[#*]+", "", out.splitlines()[0]).strip()[:60] or (topic or label or "Notes")
+    path = None
+    if in_word or re.search(r"\bin word\b", low):
+        path = write_in_word(out, "Notes " + title)
+    else:
+        try:
+            path = str(DOCS / f"Notes_{safe_name(title)}_{datetime.datetime.now():%Y%m%d_%H%M%S}.docx")
+            write_docx_file(path, out)
+        except Exception as e:
+            print("(notes file error)", e)
+            path = None
+    store.add_note(out, source="notes")
+    remember_artifact("notes", title, path, out)
+    note_action(f"made notes '{title}'" + (f", saved at {path}" if path else ""))
+    speak(f"Done. I saved '{title}' in your dashboard notes" + (" and as a Word file in your documents folder." if path else "."))
+    if in_word and path:
+        speak("It's open in Word too.")
+
+
+# =====================================================================
 #  ROUTER (LLM turns speech into a skill call)
 # =====================================================================
 ROUTER_SYS = """You convert a spoken command into JSON for a PC assistant. Reply with JSON only:
 {"skill": "<name>", "args": {...}}
 Skills:
 - whatsapp: send a WhatsApp message. args: contact, message ("" if not said)
-- email: write and send an email. args: to (name or address, "" if unknown), subject ("" if unknown), instructions (what the email should say), use_word (true only if the user says to write it in Word)
+- email: write and send an email, optionally with a file attached. args: to (name or address, "" if unknown), subject ("" if unknown), instructions (what the email should say; "" if the user only says to send the document), use_word (true only if the user says to write it in Word), attach_last (true if the user wants the document/letter/file made earlier sent or attached), file_hint (name hint of an existing file on the PC to attach, "" if none), paste (true only if the user wants the text itself pasted into the mail body instead of attached)
 - write_doc: write a letter/essay/report in Word. args: instructions
+- attach: attach a file to the email that is already open on screen. args: file_hint ("" = the document made earlier)
+- find_file: find/open/read a file or folder on this PC. args: hint (words about its name or content), location (folder/drive words like downloads, desktop, d drive, college folder; "" if none), type (word, pdf, excel, ppt, image, video, audio, text, code, folder or ""), action ("open", "folder" to show where it is, or "read" to summarise it), recent (true if they say latest/recent/newest)
+- ask_ai: use a chatbot website (Claude, ChatGPT, DeepSeek, Gemini, Perplexity, Copilot, Grok...) in Chrome. args: site ("" if not named), question (what to ask; "" if the question is on the screen/clipboard), mode ("answer", "explain" for maths/academic problems they want explained, or "follow" to carry out the steps it gives), notes (true if they want notes made too), use_screen (true if the question is on the screen or clipboard), followup (true to continue in the chat already open)
+- make_notes: make study notes on a topic, on the previous answer/explanation, or on the screen. args: topic ("" = previous answer), source ("last", "screen" or "topic"), in_word (true if they want them in Word)
 - code: write a program or script file. args: instructions
 - web: needs up-to-date or factual info from the internet. args: query
 - weather: args: city ("" if none)
@@ -2772,7 +3831,7 @@ Skills:
 - timer: countdown timer, or a reminder a few minutes/hours from now. args: seconds (number), label
 - reminder: remind at a clock time, a date or repeatedly. args: text, when (local time as "YYYY-MM-DD HH:MM" 24h, worked out from the current time you are given), repeat ("none", "daily", "weekdays" or "weekly")
 - task: add an item to the to-do list. args: text
-- note: save a note. args: text
+- note: save a short quick note. args: text
 - remember: remember a fact about the user. args: text
 - screen: explain/read/summarise the screen or clipboard. args: question
 - click: press/click a button, link or tab by the text visible on it. args: label (just the visible text)
@@ -2782,7 +3841,7 @@ Skills:
 - chat: casual talk or general knowledge. args: {}
 Examples:
 "open whatsapp in chrome and text Rahul I'll be late" -> {"skill":"whatsapp","args":{"contact":"Rahul","message":"I'll be late"}}
-"open word and write an email to aneek at gmail dot com about tomorrow's meeting and send it" -> {"skill":"email","args":{"to":"aneek at gmail dot com","subject":"","instructions":"about tomorrow's meeting","use_word":true}}
+"open word and write an email to alex at gmail dot com about tomorrow's meeting and send it" -> {"skill":"email","args":{"to":"alex at gmail dot com","subject":"","instructions":"about tomorrow's meeting","use_word":true}}
 "who won the cricket match yesterday" -> {"skill":"web","args":{"query":"cricket match result yesterday"}}
 "remind me to drink water in 20 minutes" -> {"skill":"timer","args":{"seconds":1200,"label":"drink water"}}
 "remind me every weekday at 9 to check email" -> {"skill":"reminder","args":{"text":"check email","when":"2025-01-06 09:00","repeat":"weekdays"}}
@@ -2792,25 +3851,53 @@ Examples:
 "change to my youtube tab" -> {"skill":"tab","args":{"target":"youtube"}}
 "copy all the text on the screen" -> {"skill":"copy_screen","args":{}}
 "open notepad and type a shopping list" -> {"skill":"agent","args":{"goal":"open notepad and type a shopping list"}}
+"write a leave letter to my principal in word" -> {"skill":"write_doc","args":{"instructions":"a leave letter to my principal"}}
+"send it to alex at gmail dot com on gmail" (after a letter was written) -> {"skill":"email","args":{"to":"alex at gmail dot com","subject":"","instructions":"","use_word":false,"attach_last":true,"file_hint":"","paste":false}}
+"attach that to the mail" -> {"skill":"attach","args":{"file_hint":""}}
+"find my physics assignment pdf in downloads" -> {"skill":"find_file","args":{"hint":"physics assignment","location":"downloads","type":"pdf","action":"open","recent":false}}
+"email my resume from the d drive to rahul" -> {"skill":"email","args":{"to":"rahul","subject":"","instructions":"","use_word":false,"attach_last":false,"file_hint":"resume d drive","paste":false}}
+"open chrome and ask deepseek how to solve x squared minus 5x plus 6 equals zero and explain it" -> {"skill":"ask_ai","args":{"site":"deepseek","question":"solve x squared minus 5x plus 6 equals zero","mode":"explain","notes":false,"use_screen":false,"followup":false}}
+"ask claude how to create a virtual environment in python and do what it says" -> {"skill":"ask_ai","args":{"site":"claude","question":"how to create a virtual environment in python","mode":"follow","notes":false,"use_screen":false,"followup":false}}
+"look at this problem on my screen and get chatgpt to explain it" -> {"skill":"ask_ai","args":{"site":"chatgpt","question":"","mode":"explain","notes":false,"use_screen":true,"followup":false}}
+"make notes on that" -> {"skill":"make_notes","args":{"topic":"","source":"last","in_word":false}}
+"make notes on newton's laws" -> {"skill":"make_notes","args":{"topic":"newton's laws of motion","source":"topic","in_word":false}}
 "latest news about technology" -> {"skill":"news","args":{"topic":"technology"}}
 "how are you" -> {"skill":"chat","args":{}}"""
 
 
 def fallback_route(raw):
     t = raw.lower()
+    k = ai_site_from(t)
+    if k and re.search(r"\b(ask|tell|use|get|let)\b", t):
+        return {"skill": "ask_ai", "args": {"site": k, "question": re.sub(r"^.*?\b" + k + r"\b\s*(?:to|about|that)?\s*", "", t, count=1),
+                                            "mode": "explain" if re.search(r"\b(explain|solve|maths?|problem)\b", t) else "answer",
+                                            "use_screen": "screen" in t}}
+    if re.search(r"\bmake\b.*\bnotes?\b|\bnotes? (?:on|about|of)\b", t):
+        return {"skill": "make_notes", "args": {"topic": "" if re.search(r"\b(that|this|it)\b", t) else raw, "source": "last"}}
+    if re.search(r"\battach\b", t) and not re.search(r"\bto\s+\S+@|\bat\s+\S+\s+dot\b", t):
+        return {"skill": "attach", "args": {"file_hint": ""}}
+    if re.match(r"(?:find|locate|look for|where(?:'s| is))\b", t) and re.search(r"\b(file|pdf|doc|document|folder|photo|picture|video)\b", t):
+        return {"skill": "find_file", "args": {"hint": raw, "location": "", "type": "", "action": "open"}}
     m = re.match(r"(?:send|text|message|whatsapp)\s+(\w+)\s+(?:saying|that|message|:)?\s*(.+)", t)
     if m and ("whatsapp" in t or "text" in t or "message" in t):
         return {"skill": "whatsapp", "args": {"contact": m.group(1), "message": m.group(2)}}
     if re.search(r"\b(email|mail)\b", t):
         m2 = re.search(r"to\s+(\S+(?:\s+at\s+\S+\s+dot\s+\S+)?)", t)
         return {"skill": "email", "args": {"to": m2.group(1) if m2 else "", "subject": "", "instructions": raw,
-                                          "use_word": "word" in t}}
+                                          "use_word": "word" in t, "attach_last": bool(ATTACH_WORDS.search(t))}}
     return {"skill": "web" if re.match(r"(who|what|when|where|why|how)\b", t) else "chat", "args": {"query": raw}}
 
 
 SKILLS = {
     "whatsapp": lambda a, raw: skill_whatsapp(a.get("contact"), a.get("message")),
-    "email": lambda a, raw: skill_email(a.get("to"), a.get("subject"), a.get("instructions"), bool(a.get("use_word"))),
+    "email": lambda a, raw: skill_email(a.get("to"), a.get("subject"), a.get("instructions"), bool(a.get("use_word")),
+                                        bool(a.get("attach_last")), a.get("file_hint") or "", bool(a.get("paste")), raw),
+    "attach": lambda a, raw: skill_attach(a.get("file_hint") or "", raw),
+    "find_file": lambda a, raw: skill_find_file(a.get("hint") or "", a.get("location") or "", a.get("type") or "",
+                                                a.get("action") or "open", raw),
+    "ask_ai": lambda a, raw: skill_ask_ai(a.get("site") or "", a.get("question") or "", a.get("mode") or "answer",
+                                          bool(a.get("notes")), bool(a.get("use_screen")), bool(a.get("followup")), raw),
+    "make_notes": lambda a, raw: skill_make_notes(a.get("topic") or "", a.get("source") or "", bool(a.get("in_word")), raw),
     "write_doc": lambda a, raw: skill_write_doc(a.get("instructions") or raw),
     "code": lambda a, raw: skill_code(a.get("instructions") or raw),
     "web": lambda a, raw: skill_web(a.get("query") or raw),
@@ -2831,12 +3918,13 @@ SKILLS = {
 
 
 def route_and_run(raw):
-    ctx_txt = recent_context(3 if groq_available() else 2)
-    content = (f"Recent conversation (context only, for follow-ups like 'send it to him' or 'make it shorter'):\n"
-               f"{ctx_txt}\n\nNew command: {raw}") if ctx_txt else raw
+    ctx_txt = recent_context(4 if groq_available() else 2)
+    art = artifacts_block()
+    content = (f"Recent conversation (context only, for follow-ups like 'send it to him' or 'attach it'):\n"
+               f"{ctx_txt}\n\n{art}\n\nNew command: {raw}") if ctx_txt else (f"{art}\n\nNew command: {raw}" if art else raw)
     content = f"Current local time: {datetime.datetime.now():%A %Y-%m-%d %H:%M}\n" + content
     plan = llm_json([{"role": "system", "content": ROUTER_SYS}, {"role": "user", "content": content}],
-                    task="fast", max_tokens=160, temp=0.1)
+                    task="fast", max_tokens=260, temp=0.1)
     if not plan or "skill" not in plan:
         plan = fallback_route(raw)
     global LAST_SKILL
@@ -2856,7 +3944,8 @@ def route_and_run(raw):
 # =====================================================================
 COMPOUND = re.compile(r"\b(and then|then|and (?:text|message|send|write|email|mail|search|play|type|click|tell|ask|call|open))\b")
 EXIT_WORDS = {"exit", "quit", "goodbye", "bye", "bye ashie", "stop assistant", "close assistant", "shut down assistant"}
-HELP = ("I can open apps and websites, text people on WhatsApp, write and send emails, write documents in Word, "
+HELP = ("I can open apps and websites, text people on WhatsApp, write documents in Word and email them with the file attached, "
+        "find files on your computer, ask chatbots like Claude or DeepSeek and explain their answers, make notes, "
         "write code, search the web, set timers, read your screen, click things you name, control volume, "
         "windows and settings with your confirmation, and just chat. Start every command with my name.")
 
@@ -2890,9 +3979,9 @@ def rules(raw, t):
         speak("Voice lock is " + ("on" if VOICE_LOCK_ENABLED else "off") + ". Say turn voice lock on or off to change it.")
         return "ok"
     if re.fullmatch(r"who (made|created|built|programmed) you|who is your (creator|maker|developer)", t):
-        speak(f"{USER_NAME} made me. He's a hardcore programmer from India, so I'm pretty proud."); return "ok"
+        speak(f"{USER_NAME} set me up, and I'm here to help however I can."); return "ok"
     if t in ("who am i", "what's my name", "what is my name"):
-        speak(f"You're {USER_NAME}, my creator, and a hardcore programmer from India."); return "ok"
+        speak(f"You're {USER_NAME}, the person I work for."); return "ok"
     if t in ("what's your name", "what is your name", "who are you"):
         speak(f"I'm {ASSISTANT_NAME}, {USER_NAME}'s personal assistant."); return "ok"
     if t in ("thank you", "thanks", "thank you ashie"):
@@ -2906,6 +3995,19 @@ def rules(raw, t):
         t = norm(raw)
 
     compound = bool(COMPOUND.search(t))
+
+    # notes / files: let the router (which knows what I made earlier) decide
+    if re.match(r"(?:please\s+)?(?:make|write|create|prepare|take|give me)\s+(?:me\s+)?(?:some\s+|a few\s+)?"
+                r"(?:short\s+|brief\s+|detailed\s+|study\s+|quick\s+)?notes?\b", t):
+        route_and_run(raw); return "ok"
+    _FW = (r"(?:files?|documents?|docs?|pdfs?|ppts?|powerpoint|presentations?|spreadsheets?|excel|sheets?|photos?|pictures?|"
+           r"images?|videos?|songs?|resume|cv|assignment|report|invoice|certificate|marksheet|syllabus|folder)")
+    if not compound and re.match(r"(?:please\s+)?(?:find|search(?: for)?|locate|look for|where(?:'s| is| are)|show me|pull up|get me|"
+                                 r"open|bring up)\b", t) and not re.match(r"open folder\b", t) and (
+            re.search(r"\b(?:in|on|from|inside) (?:my |the )?(?:downloads?|documents?|desktop|pictures|videos|music|onedrive|[c-z] drive|\w+ folder)\b", t)
+            or (re.search(r"\b" + _FW + r"\b", t) and re.search(
+                r"\b(?:on|in) my (?:computer|pc|laptop|system|drive)\b|\b(?:my|the) \w+ (?:file|pdf|doc|document|folder|ppt)\b|\bfile\b|\bfolder\b", t))):
+        route_and_run(raw); return "ok"
 
     # dictation & typing
     if t in ("start dictation", "start typing", "dictation mode"):
